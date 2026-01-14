@@ -1,9 +1,8 @@
 import os
 import time
 from pathlib import Path
-from typing import Type
 
-from search_rdf import Data, KeywordIndex, EmbeddingIndex
+from search_rdf import Data, EmbeddingIndex, KeywordIndex
 from universal_ml_utils.io import dump_json, load_json
 from universal_ml_utils.logging import get_logger
 
@@ -11,7 +10,6 @@ from grasp.manager.cache import Cache
 from grasp.manager.normalizer import Normalizer, WikidataPropertyNormalizer
 from grasp.sparql.utils import get_endpoint, load_qlever_prefixes
 from grasp.utils import get_index_dir
-
 
 SearchIndex = KeywordIndex | EmbeddingIndex
 
@@ -179,19 +177,22 @@ def is_embedding_index(index: SearchIndex) -> bool:
     return index.index_type == "embedding"
 
 
-def describe_index(index: SearchIndex) -> tuple[str, str]:
-    if index.index_type == "keyword":
+def describe_index(index: SearchIndex | str) -> tuple[str, str]:
+    if isinstance(index, SearchIndex):
+        index = index.index_type
+
+    if index == "keyword":
         title = "Keyword index"
-        desc = "Retrieves items by overlap between query keywords \
-and item label words. The query keywords can match item label words exactly or \
+        desc = "Retrieves items by overlap between their label words and \
+the query keywords. The query keywords can match label words exactly or \
 as prefixes. No special query operators like AND/OR are supported."
 
-    elif index.index_type == "embedding":
+    elif index == "embedding":
         title = "Embedding index"
         desc = "Retrieves items by cosine similarity between their \
 label embeddings and the query embedding."
 
     else:
-        raise ValueError(f"Unknown index type {index.index_type}")
+        raise ValueError(f"Unknown index type {index}")
 
     return title, desc

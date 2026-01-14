@@ -56,8 +56,8 @@ def system_instructions(
             index_types.add(manager.property_index.index_type)
 
     index_infos = []
-    for index_type in sorted(index_types):
-        title, desc = describe_index(index_type)
+    for index in sorted(index_types):
+        title, desc = describe_index(index)
         index_infos.append(f"{title}: {desc}")
 
     system_info = task_system_information(task, config)
@@ -95,10 +95,14 @@ def setup(config: GraspConfig) -> tuple[list[KgManager], TextEmbeddingModel | No
     managers: list[KgManager] = []
     for kg in config.knowledge_graphs:
         manager = load_kg_manager(kg)
-        managers.append(manager)
 
         if kg.has_embedding_index and model is None:
             model = TextEmbeddingModel(config.embedding_model)
+
+        if model is not None:
+            manager.set_embedding_model(model)
+
+        managers.append(manager)
 
     return managers, model
 

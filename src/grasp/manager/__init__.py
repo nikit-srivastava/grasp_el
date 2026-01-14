@@ -58,10 +58,6 @@ from grasp.utils import clip, format_list, ordered_unique
 
 
 class KgManager:
-    prefixes: dict[str, str]
-    kg: str
-    endpoint: str
-
     def __init__(
         self,
         kg: str,
@@ -99,7 +95,12 @@ class KgManager:
 
         self.endpoint = endpoint or get_endpoint(self.kg)
 
+        self.embedding_model: TextEmbeddingModel | None = None
+
         self.logger = get_logger(f"{self.kg.upper()} KG MANAGER")
+
+    def set_embedding_model(self, model: TextEmbeddingModel) -> None:
+        self.embedding_model = model
 
     def prettify(
         self,
@@ -705,7 +706,6 @@ class KgManager:
         query: str | None = None,
         k: int = 10,
         identifier_map: dict[str, list[str]] | None = None,
-        model: TextEmbeddingModel | None = None,
         **search_kwargs: Any,
     ) -> list[Alternative]:
         index = self.index(obj_type)
@@ -732,10 +732,10 @@ class KgManager:
             if index.index_type == "embedding":
                 # embedding index can also have min score passed
                 kwargs["min_score"] = search_kwargs.get("min_score")
-                assert model is not None, (
-                    "Embedding model must be provided for embedding index search"
+                assert self.embedding_model is not None, (
+                    "Embedding model must be set for embedding index search"
                 )
-                embedding: list[float] = model.embed([query])[0].tolist()  # type: ignore
+                embedding: list[float] = self.embedding_model.embed([query])[0].tolist()  # type: ignore
                 kwargs["embedding"] = embedding
             else:
                 kwargs["query"] = query

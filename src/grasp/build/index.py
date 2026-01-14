@@ -24,36 +24,36 @@ def build_index(
 ) -> None:
     data = load_data(index_dir)
 
-    out_dir = os.path.join(index_dir, index_type)
-    if os.path.exists(out_dir) and not overwrite:
+    index_dir = os.path.join(index_dir, index_type)
+    if os.path.exists(index_dir) and not overwrite:
         logger.info(
-            f"Index of type {index_type} already exists at {out_dir}. Skipping build."
+            f"Index of type {index_type} already exists at {index_dir}. Skipping build."
         )
         return
 
-    os.makedirs(out_dir, exist_ok=True)
+    os.makedirs(index_dir, exist_ok=True)
     start = time.perf_counter()
-    logger.info(f"Building {index_type} index at {out_dir} from {len(data):,} items")
+    logger.info(f"Building {index_type} index at {index_dir} from {len(data):,} items")
 
     if index_type == "keyword":
-        KeywordIndex.build(data, out_dir)
+        KeywordIndex.build(data, index_dir)
 
     elif index_type == "embedding":
         assert embedding_model is not None, (
             "Embedding model must be specified for embedding index"
         )
-        embeddings_path = os.path.join(index_dir, "data", "embeddings.safetensors")
+        embedding_path = os.path.join(index_dir, "embedding.safetensors")
 
         generate_embeddings(
             data,
-            embeddings_path,
-            model=embedding_model,
+            embedding_path,
+            model_name=embedding_model,
             device=embedding_device,
             batch_size=embedding_batch_size,
             dim=embedding_dim,
         )
 
-        EmbeddingIndex.build(data, embeddings_path, out_dir)
+        EmbeddingIndex.build(data, embedding_path, index_dir)
 
     else:
         raise ValueError(f"Unknown index type: {index_type}")
@@ -64,21 +64,21 @@ def build_index(
 
 def generate_embeddings(
     data: Data,
-    out_path: str,
-    model: str,
+    embedding_path: str,
+    model_name: str,
     device: str | None = None,
     batch_size: int = 256,
     dim: int | None = None,
 ) -> None:
-    embedding_model = TextEmbeddingModel(model, device)
+    model = TextEmbeddingModel(model_name, device)
 
     texts = list(flatten(fields for _, fields in data))
-    embedding = embedding_model.embed(texts, dim, batch_size, show_progress=True)
+    embedding = model.embed(texts, dim, batch_size, show_progress=True)
 
     save_file(
         {"embedding": embedding},
-        filename=out_path,
-        metadata={"model": model},
+        filename=embedding_path,
+        metadata={"model": model_name},
     )
 
 

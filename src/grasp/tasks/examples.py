@@ -105,16 +105,12 @@ class ExampleIndex:
         data = Data.load(data_dir)
 
         texts = list(flatten(fields for _, fields in data))
-        embeddings = model.embed(
-            texts,
-            batch_size=batch_size,
-            show_progress=True,
-        )
+        embedding = model.embed(texts, batch_size=batch_size, show_progress=True)
 
         embedding_path = os.path.join(data_dir, "embedding.safetensors")
 
         save_file(
-            {"embedding": embeddings},
+            {"embedding": embedding},
             filename=embedding_path,
             metadata={"model": model.model},
         )

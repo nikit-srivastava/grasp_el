@@ -34,8 +34,8 @@ knowledge_graphs:
   - kg: wikidata
     endpoint: env(WD_ENDPOINT:null)
     example_index: env(WD_EXAMPLES:null)
-    entities_type: env(WD_ENT_TYPE:null)
-    properties_type: env(WD_PROP_TYPE:null)
+    entities_type: env(WD_ENT_TYPE:keyword)
+    properties_type: env(WD_PROP_TYPE:embedding)
     notes_file: env(WD_NOTES_FILE:null)
   - kg: freebase
   - kg: dblp
