@@ -2,6 +2,7 @@ import argparse
 import os
 import random
 
+from search_rdf.model import TextEmbeddingModel
 from tqdm import tqdm
 from universal_ml_utils.io import dump_jsonl
 from universal_ml_utils.logging import setup_logging
@@ -29,7 +30,9 @@ def parse_args() -> argparse.Namespace:
         help="Knowledge graph to use",
     )
     parser.add_argument(
-        "input_file", type=str, help="Path to the input file containing data samples"
+        "input_file",
+        type=str,
+        help="Path to the input file containing data samples",
     )
     parser.add_argument(
         "output_file",
@@ -71,6 +74,12 @@ def parse_args() -> argparse.Namespace:
         help="Random seed for reproducibility",
     )
     parser.add_argument(
+        "--embedding-model",
+        type=str,
+        default="Qwen/Qwen3-Embedding-0.6B",
+        help="Text embedding model to use for embedding index",
+    )
+    parser.add_argument(
         "--overwrite",
         action="store_true",
         help="Overwrite the output file if it exists",
@@ -90,7 +99,12 @@ def main(args: argparse.Namespace) -> None:
 
     samples = load_samples([args.input_file])
 
-    manager = load_kg_manager(KgConfig(kg=args.knowledge_graph, endpoint=args.endpoint))
+    config = KgConfig(kg=args.knowledge_graph, endpoint=args.endpoint)
+    manager = load_kg_manager(config)
+
+    if config.has_embedding_index:
+        model = TextEmbeddingModel(args.embedding_model)
+        manager.set_embedding_model(model)
 
     random.seed(args.seed)
     n = args.num_materializations if not args.is_val else 1

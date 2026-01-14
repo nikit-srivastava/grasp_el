@@ -1,9 +1,9 @@
 import argparse
-from logging import Logger
 import os
 import random
 import re
 import string
+from logging import Logger
 
 import torch
 from grammar_utils.parse import LR1Parser
@@ -229,8 +229,8 @@ def format_alternatives(alternatives: list[Alternative]) -> str:
     if len(alternatives) == 0:
         return "No alternatives found"
 
-    assert len(alternatives) < len(ALT_LABELS), (
-        f"Number of alternatives must be less than {len(ALT_LABELS)}"
+    assert len(alternatives) < len(ALT_LABELS) - 1, (
+        f"Number of alternatives must be less than {len(ALT_LABELS) - 1}"
     )
 
     top_k_string = "\n".join(
@@ -571,10 +571,7 @@ def prepare_selection(
 
     if shuffle_alts:
         # shuffle all alternatives to counter position bias
-        # only the None alternative should always be last
-        none_alt = alternatives.pop()
         random.shuffle(alternatives)
-        alternatives.append(none_alt)
 
     target_option: int | None = None
     for i, alt in enumerate(alternatives):
