@@ -12,14 +12,15 @@ SELECT DISTINCT ?id ?value ?type WHERE {
     BIND("alias" AS ?type)
   } UNION {
     VALUES ?id { {IDS} }
-    ?id fb:type.property.schema/@en@rdfs:label ?schema.
-    FILTER(LANGMATCHES(LANG(?schema), "en"))
+    ?id fb:type.property.schema ?schema_ .
+    ?schema_ @en@rdfs:label ?schema
     BIND(CONCAT("is part of schema ", ?schema) AS ?value)
     BIND("info" AS ?type)
   } UNION {
     VALUES ?id { {IDS} }
-    ?id fb:type.property.expected_type/@en@rdfs:label ?type .
-    BIND(CONCAT("links to type ", ?type) AS ?value)
+    ?id fb:type.property.expected_type ?typ_ .
+    ?typ_ @en@rdfs:label ?typ
+    BIND(CONCAT("links to type ", ?typ) AS ?value)
     BIND("info" AS ?type)
   }
 }

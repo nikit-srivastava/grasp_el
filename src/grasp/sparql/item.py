@@ -43,12 +43,12 @@ class Item:
         return self.prefix + self.item
 
     @property
-    def is_other_or_literal(self) -> bool:
-        return self.obj_type == ObjType.OTHER or self.obj_type == ObjType.LITERAL
+    def is_literal(self) -> bool:
+        return self.obj_type == ObjType.LITERAL
 
     @property
     def is_entity_or_property(self) -> bool:
-        return not self.is_other_or_literal
+        return self.obj_type == ObjType.ENTITY or self.obj_type == ObjType.PROPERTY
 
     @property
     def selection(self) -> Selection:
@@ -147,8 +147,10 @@ def _get_item(
         if not manager.check_identifier(identifier, obj_type):
             continue
 
-        alternative = manager.build_alternative(
+        infos = manager.get_infos_for_identifiers_of_type([identifier], obj_type)
+        alternative = manager.build_alternative_with_infos(
             identifier,
+            infos.get(identifier, {}),
             variants=[variant] if variant else None,
         )
 
@@ -165,10 +167,36 @@ def _get_item(
     # if iri has a common prefix, it is not expected to be indexed
     invalid = find_longest_prefix(iri, COMMON_PREFIXES) is None
 
+    variant = None
+    if invalid:
+        infos = {}
+        for obj_type in obj_types:
+            norm = manager.normalize(iri, obj_type)
+            if norm is None:
+                continue
+
+            identifier, obj_type_variant = norm
+            if obj_type_variant:
+                variant = obj_type_variant
+
+            obj_type_infos = manager.get_infos_for_identifiers_of_type(
+                [identifier], obj_type
+            )
+            for key, value in obj_type_infos.get(identifier, {}).items():
+                if key not in infos or not isinstance(infos[key], list):
+                    infos[key] = value
+                else:
+                    assert isinstance(value, list)
+                    infos[key].extend(value)
+
+    else:
+        infos = None
+
     return Item(
-        alternative=Alternative(
+        alternative=manager.build_alternative_with_infos(
             identifier=iri,
-            short_identifier=manager.format_iri(iri),
+            infos=infos,
+            variants=[variant] if variant else None,
         ),
         obj_type=ObjType.OTHER,
         variant=None,

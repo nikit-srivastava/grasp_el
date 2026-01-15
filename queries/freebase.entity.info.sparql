@@ -19,8 +19,9 @@ SELECT DISTINCT ?id ?value ?type WHERE {
     BIND("info" AS ?type)
   } UNION {
     VALUES ?id { {IDS} }
-    ?id fb:common.topic.notable_types/@en@fb:type.object.name ?type
-    BIND(CONCAT("has type ", ?type) AS ?value)
+    ?id fb:common.topic.notable_types ?typ_ .
+    ?typ_ @en@fb:type.object.name ?typ
+    BIND(CONCAT("has type ", ?typ) AS ?value)
     BIND("info" AS ?type)
   } UNION {
     VALUES ?id { {IDS} }

@@ -336,6 +336,9 @@ def group_selections(
     grouped = {}
     for _, group in groupby(sorted(selections, key=_key), key=_key):
         selections = list(group)
+        if not selections:
+            continue
+
         obj_type = selections[0].obj_type
 
         if obj_type == ObjType.OTHER:

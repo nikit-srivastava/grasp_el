@@ -60,11 +60,7 @@ class IRI(BaseModel):
         assert identifier is not None, "Failed to denormalize identifier"
         identifier = manager.format_iri(identifier)
 
-        return IRI(
-            identifier=identifier,
-            label=label,
-            aliases=aliases,
-        )
+        return IRI(identifier=identifier, label=label, aliases=aliases)
 
 
 class GRISPSample(BaseModel):
@@ -536,7 +532,7 @@ def prepare_selection(
     sparql = materialize_sparql(sample.sparql)
 
     _, items = extract_sparql_items(sparql, manager)
-    items = [item for item in items if not item.is_other_or_literal]
+    items = [item for item in items if item.is_entity_or_property]
     assert len(items) > 0, "No valid item to replace found in sample"
 
     parser = load_sparql_parser()
@@ -788,12 +784,9 @@ def main(args: argparse.Namespace) -> None:
                 remove_known=True,
             )
             sparql = manager.prettify(sparql)
-            sparql, items = extract_sparql_items(
-                sparql,
-                manager,
-            )
+            sparql, items = extract_sparql_items(sparql, manager)
 
-            if any(item.invalid for item in items):
+            if any(item.invalid and not item.is_other_with_label for item in items):
                 invalid += 1
                 logger.debug(f"Invalid sample {sample.id}:\n{sparql}")
                 continue
@@ -803,7 +796,7 @@ def main(args: argparse.Namespace) -> None:
             for item in items:
                 # others can only be invalid, which is already checked above
                 # literals should be predicted directly
-                if item.is_other_or_literal:
+                if item.is_literal:
                     continue
 
                 item_start, item_end = item.item_span

@@ -438,13 +438,13 @@ class KgManager:
 
         # extract needed data from infos dict
         label = infos.get("label")
-        synonyms = infos.get("alias", [])
+        aliases = infos.get("alias", [])
         added_infos = infos.get("info", [])
 
         return self.build_alternative(
             identifier,
             label,
-            synonyms,
+            aliases,
             added_infos,
             variants,
             matched_via,
@@ -454,7 +454,7 @@ class KgManager:
         self,
         identifier: str,
         label: str | None = None,
-        synonyms: list[str] | None = None,
+        aliases: list[str] | None = None,
         infos: list[str] | None = None,
         variants: list[str] | None = None,
         matched_via: str | None = None,
@@ -463,8 +463,8 @@ class KgManager:
         if variants is not None:
             variants = ordered_unique(variants)
 
-        if synonyms is not None:
-            synonyms = ordered_unique(synonyms, filter=lambda syn: syn != label)
+        if aliases is not None:
+            aliases = ordered_unique(aliases, filter=lambda syn: syn != label)
 
         if infos is not None:
             infos = ordered_unique(infos)
@@ -474,7 +474,7 @@ class KgManager:
             short_identifier=self.format_iri(identifier),
             label=label,
             variants=variants,
-            aliases=synonyms,
+            aliases=aliases,
             infos=infos,
             matched_label=matched_via,
         )
@@ -579,6 +579,7 @@ class KgManager:
                 "SPARQL must contain {IDS} placeholder for identifiers"
             )
             info_sparql = info_sparql.replace("{IDS}", " ".join(identifiers))
+            self.logger.debug(f"Retrieving infos with SPARQL:\n{info_sparql}")
             result = self.execute_sparql(
                 info_sparql,
                 # set info timeouts to something shorter than usual
@@ -616,7 +617,7 @@ class KgManager:
                 infos[identifier][typ].append(text)
 
         except Exception as e:
-            self.logger.warning(f"Failed to get infos for identifiers: {e}")
+            self.logger.warning(f"Failed to retrieve infos for identifiers: {e}")
 
         return infos
 
@@ -1016,21 +1017,11 @@ class KgManager:
 
         grouped = group_selections(selections)
 
-        def get_alternatives_with_infos(
-            alts: list[tuple[Alternative, list[str]]],
-            obj_type: ObjType,
-        ) -> Iterator[Alternative]:
-            identifiers = [alt.identifier for alt, _ in alts]
-            infos = self.get_infos_for_identifiers_of_type(identifiers, obj_type)
-
-            for identifier, (_, variants) in zip(identifiers, alts):
-                yield self.build_alternative_with_infos(identifier, infos, variants)
-
         return "\n\n".join(
             f"Using {name}:\n"
             + format_list(
-                alt.get_selection_string()
-                for alt in get_alternatives_with_infos(grouped[obj_type], obj_type)
+                alt.get_selection_string(include_variants=variants)
+                for alt, variants in grouped[obj_type]
             )
             for obj_type, name in rename_obj_type
             if obj_type in grouped
