@@ -1,16 +1,14 @@
-import random
 import sys
 from dataclasses import dataclass
 from itertools import chain
 from typing import Optional
 
 from grasp.manager import KgManager
-from grasp.manager.utils import get_common_sparql_prefixes
+from grasp.manager.utils import find_obj_type_from_prefixes, get_common_sparql_prefixes
 from grasp.sparql.types import Alternative, ObjType, Position, Selection
 from grasp.sparql.utils import (
     autocomplete_prefix,
     find_all,
-    find_longest_prefix,
     parse_into_binding,
     parse_string,
 )
@@ -33,7 +31,6 @@ class Item:
     alternative: Alternative
     obj_type: ObjType
     variant: str | None
-    invalid: bool = False
 
     def same_as(self, other: "Item") -> bool:
         return self.alternative.identifier == other.alternative.identifier
@@ -45,6 +42,22 @@ class Item:
     @property
     def is_literal(self) -> bool:
         return self.obj_type == ObjType.LITERAL
+
+    @property
+    def is_unindexed(self) -> bool:
+        return self.obj_type == ObjType.UNINDEXED
+
+    @property
+    def is_unknown(self) -> bool:
+        return self.obj_type == ObjType.UNKNOWN
+
+    @property
+    def is_common(self) -> bool:
+        return self.obj_type == ObjType.COMMON
+
+    @property
+    def has_label(self) -> bool:
+        return self.alternative.has_label()
 
     @property
     def is_entity_or_property(self) -> bool:
@@ -161,14 +174,11 @@ def _get_item(
             **kwargs,
         )
 
-    # we know that it is an IRI of another known prefix,
-    # e.g. rdfs:label or schema:about, or a unknown entity or property
-    # of a known prefix, e.g. wd:Q123456789
-    # if iri has a common prefix, it is not expected to be indexed
-    invalid = find_longest_prefix(iri, COMMON_PREFIXES) is None
+    obj_type = find_obj_type_from_prefixes(iri, manager.prefixes, COMMON_PREFIXES)
 
     variant = None
-    if invalid:
+    if obj_type == ObjType.UNINDEXED:
+        # try to get infos from live endpoint
         infos = {}
         for obj_type in obj_types:
             norm = manager.normalize(iri, obj_type)
@@ -198,9 +208,8 @@ def _get_item(
             infos=infos,
             variants=[variant] if variant else None,
         ),
-        obj_type=ObjType.OTHER,
+        obj_type=obj_type,
         variant=None,
-        invalid=invalid,
         **kwargs,
     )
 

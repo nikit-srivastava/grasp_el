@@ -21,7 +21,7 @@ from grasp.sparql.item import Item, extract_sparql_items
 from grasp.sparql.types import Alternative, Selection
 from grasp.sparql.utils import find_all
 from grasp.tasks import SparqlQaSample
-from grasp.utils import get_available_knowledge_graphs
+from grasp.utils import format_list, get_available_knowledge_graphs
 
 BOI = "<iri>"
 EOI = "</iri>"
@@ -57,7 +57,9 @@ class IRI(BaseModel):
             item.obj_type,
             item.variant,
         )
-        assert identifier is not None, "Failed to denormalize identifier"
+        assert identifier is not None, (
+            f"Failed to denormalize identifier {item.alternative.identifier}"
+        )
         identifier = manager.format_iri(identifier)
 
         return IRI(identifier=identifier, label=label, aliases=aliases)
@@ -740,9 +742,9 @@ def parse_args() -> argparse.Namespace:
         help="Path to output JSONL file to save the processed data",
     )
     parser.add_argument(
-        "--materialize",
+        "--allow-unknown",
         action="store_true",
-        help="Materialize the samples into usable inputs for training",
+        help="Allow (directly predict) unkown items instead of skipping the sample",
     )
     parser.add_argument(
         "--seed",
@@ -755,12 +757,18 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Overwrite the output file if it exists",
     )
+    parser.add_argument(
+        "--log-level",
+        type=str,
+        default="INFO",
+        help="Logging level",
+    )
     return parser.parse_args()
 
 
 def main(args: argparse.Namespace) -> None:
     manager = load_kg_manager(KgConfig(kg=args.knowledge_graph, endpoint=args.endpoint))
-    logger = get_logger("GRISP DATA", level="INFO")
+    logger = get_logger("GRISP DATA", args.log_level)
 
     if os.path.exists(args.output_file) and not args.overwrite:
         raise FileExistsError(
@@ -786,17 +794,32 @@ def main(args: argparse.Namespace) -> None:
             sparql = manager.prettify(sparql)
             sparql, items = extract_sparql_items(sparql, manager)
 
-            if any(item.invalid and not item.is_other_with_label for item in items):
+            invalid_items = [
+                item
+                for item in items
+                if (item.is_unindexed and not item.has_label)
+                or (item.is_unknown and not args.allow_unknown)
+            ]
+            if invalid_items:
                 invalid += 1
-                logger.debug(f"Invalid sample {sample.id}:\n{sparql}")
+                invalid_str = format_list(
+                    item.alternative.get_selection_string(
+                        include_variants=[item.variant] if item.variant else None
+                    )
+                    for item in invalid_items
+                )
+
+                logger.debug(
+                    f"Invalid sample {sample.id}:\n\n{sample.question}\n\n"
+                    f"{sparql}\n\n{invalid_str}"
+                )
                 continue
 
             parts = []
             start = 0
             for item in items:
-                # others can only be invalid, which is already checked above
-                # literals should be predicted directly
-                if item.is_literal:
+                # literals, common, and unknown (if allowed) should be predicted directly
+                if item.is_literal or item.is_common or item.is_unknown:
                     continue
 
                 item_start, item_end = item.item_span
@@ -820,7 +843,8 @@ def main(args: argparse.Namespace) -> None:
         except Exception as e:
             error += 1
             logger.debug(
-                f"Error processing sample {sample.id}:\n{sample.sparql}\n\n{e}"
+                f"Error processing sample {sample.id}:\n"
+                f"{sample.model_dump_json(indent=2)}\n\n{e}"
             )
             continue
 

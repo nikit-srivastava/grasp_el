@@ -262,32 +262,33 @@ def prepare_json_items(
         # wrap id with brackets
         id = f"<{id}>"
 
+        if last_id is not None and id != last_id:
+            # yield previous item
+            if add_id_as_label == "always" or (
+                add_id_as_label == "empty" and not fields
+            ):
+                # add label from id
+                fields.append(
+                    {
+                        "type": "text",
+                        "value": get_value_from_id(last_id, prefixes),
+                        "tags": [],
+                    }
+                )
+
+            yield {
+                "identifier": last_id,
+                "fields": ordered_unique(fields, key=lambda f: f["value"]),
+            }
+
+            fields = []
+
+        last_id = id
         if value:
             fields.append({"type": "text", "value": value, "tags": tags})
 
-        if last_id is None or id == last_id:
-            last_id = id
-            continue
-
-        if add_id_as_label == "always" or (add_id_as_label == "empty" and not fields):
-            # add label from id
-            fields.append(
-                {
-                    "type": "text",
-                    "value": get_value_from_id(last_id, prefixes),
-                    "tags": [],
-                }
-            )
-
-        yield {
-            "identifier": last_id,
-            "fields": ordered_unique(fields, key=lambda f: f["value"]),
-        }
-
-        last_id = id
-        fields = []
-
     if last_id is None:
+        # only happens if there are no bindings
         return
 
     # dont forget final item

@@ -670,7 +670,7 @@ def update_known_from_alternatives(
     # other
     update_known_from_alts(
         known,
-        alternatives.get(ObjType.OTHER, []),
+        alternatives.get(ObjType.UNINDEXED, []),
     )
 
 
@@ -838,6 +838,9 @@ SELECT ?s ?p ?o WHERE {{
 
     # functions to get scores for properties and entities
     def prop_rank(prop: Binding) -> int:
+        if not manager.property_data:
+            return 0
+
         norm = manager.property_normalizer.normalize(prop.identifier())
         if norm is None:
             return len(manager.property_data)
@@ -850,6 +853,9 @@ SELECT ?s ?p ?o WHERE {{
         return id
 
     def ent_rank(ent: Binding) -> int:
+        if not manager.entity_data:
+            return 0
+
         norm = manager.entity_normalizer.normalize(ent.identifier())
         if norm is None:
             return len(manager.entity_data)

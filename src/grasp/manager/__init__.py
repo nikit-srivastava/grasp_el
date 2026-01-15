@@ -3,7 +3,7 @@ import os
 import sys
 import tempfile
 import time
-from typing import Any, Iterable, Iterator
+from typing import Any, Iterable
 
 from search_rdf import Data, KeywordIndex
 from search_rdf.model import TextEmbeddingModel
@@ -16,6 +16,8 @@ from grasp.manager.normalizer import Normalizer
 from grasp.manager.utils import (
     SearchIndex,
     describe_index,
+    find_obj_type_from_prefixes,
+    get_common_sparql_prefixes,
     load_kg_caches,
     load_kg_indices,
     load_kg_info_sparqls,
@@ -386,7 +388,7 @@ class KgManager:
         elif obj_type == ObjType.PROPERTY:
             return self.property_normalizer.denormalize(identifier, variant)
         else:
-            return None
+            return identifier
 
     def check_identifier(
         self,
@@ -527,13 +529,26 @@ class KgManager:
             if unmatched:
                 others.append((identifier, self.format_iri(identifier), infos))
 
-        # sort others by whether they are from one of our known
-        # prefixes or not
-        others.sort(key=lambda item: self.find_longest_prefix(item[0]) is None)
+        common_prefixes = get_common_sparql_prefixes()
+
+        unindexed = []
+        common = []
+        for item in others:
+            obj_type = find_obj_type_from_prefixes(
+                item[0],
+                self.prefixes,
+                common_prefixes,
+            )
+            if obj_type == ObjType.UNINDEXED:
+                unindexed.append(item)
+            elif obj_type == ObjType.COMMON:
+                common.append(item)
+
         return {
             ObjType.ENTITY: entities,
             ObjType.PROPERTY: properties,
-            ObjType.OTHER: others,
+            ObjType.UNINDEXED: others,
+            ObjType.COMMON: common,
             ObjType.LITERAL: literals,
         }
 
@@ -882,7 +897,7 @@ class KgManager:
 
         # other iris can always be subjects, properties, and objects
         # empty by default
-        output[ObjType.OTHER] = []
+        output[ObjType.UNINDEXED] = []
         return output
 
     def get_search_items(
@@ -991,7 +1006,7 @@ class KgManager:
 
         start = time.perf_counter()
 
-        for obj_type in [ObjType.OTHER, ObjType.LITERAL]:
+        for obj_type in [ObjType.UNINDEXED, ObjType.LITERAL]:
             if obj_type not in search_items:
                 continue
 
@@ -1012,7 +1027,7 @@ class KgManager:
         rename_obj_type = [
             (ObjType.ENTITY, "entities"),
             (ObjType.PROPERTY, "properties"),
-            (ObjType.OTHER, "others"),
+            (ObjType.UNINDEXED, "unindexed items"),
         ]
 
         grouped = group_selections(selections)

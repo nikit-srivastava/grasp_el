@@ -1,4 +1,3 @@
-import re
 from dataclasses import dataclass
 from enum import StrEnum
 from itertools import groupby
@@ -10,7 +9,9 @@ from grasp.utils import clip, format_list
 class ObjType(StrEnum):
     ENTITY = "entity"
     PROPERTY = "property"
-    OTHER = "other"
+    COMMON = "common"
+    UNINDEXED = "other"
+    UNKNOWN = "unknown"
     LITERAL = "literal"
 
     def __repr__(self) -> str:
@@ -241,7 +242,11 @@ class Alternative:
         elif self.has_label() and variants:
             parts.append(f"{self.get_identifier()} as {'/'.join(variants)}")
 
-        if show_matched_label and self.matched_label is not None:
+        if (
+            show_matched_label
+            and self.matched_label is not None
+            and self.matched_label != self.label
+        ):
             parts.append(f'matched via "{clip(self.matched_label)}"')
 
         if parts:
@@ -336,15 +341,15 @@ def group_selections(
     grouped = {}
     for _, group in groupby(sorted(selections, key=_key), key=_key):
         selections = list(group)
-        if not selections:
-            continue
 
         obj_type = selections[0].obj_type
 
-        if obj_type == ObjType.OTHER:
+        if obj_type == ObjType.UNINDEXED:
             # only keep invalid OTHERs, as they represent kg IRIs that
             # are not indexed but still referenced in the query
             selections = [sel for sel in selections if sel.invalid]
+            if not selections:
+                continue
 
         if obj_type not in grouped:
             grouped[obj_type] = []

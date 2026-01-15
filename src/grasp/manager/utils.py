@@ -8,7 +8,8 @@ from universal_ml_utils.logging import get_logger
 
 from grasp.manager.cache import Cache
 from grasp.manager.normalizer import Normalizer, WikidataPropertyNormalizer
-from grasp.sparql.utils import get_endpoint, load_qlever_prefixes
+from grasp.sparql.utils import find_longest_prefix, get_endpoint, load_qlever_prefixes
+from grasp.sparql.types import ObjType
 from grasp.utils import get_index_dir
 
 SearchIndex = KeywordIndex | EmbeddingIndex
@@ -164,6 +165,7 @@ def get_common_sparql_prefixes() -> dict[str, str]:
         "schema": "<http://schema.org/",
         "geo": "<http://www.opengis.net/ont/geosparql#",
         "geosparql": "<http://www.opengis.net/ont/geosparql#",
+        "geof": "<http://www.opengis.net/def/function/geosparql/",
         "gn": "<http://www.geonames.org/ontology#",
         "bd": "<http://www.bigdata.com/rdf#",
         "hint": "<http://www.bigdata.com/queryHints#",
@@ -171,6 +173,26 @@ def get_common_sparql_prefixes() -> dict[str, str]:
         "qb": "<http://purl.org/linked-data/cube#",
         "void": "<http://rdfs.org/ns/void#",
     }
+
+
+def find_obj_type_from_prefixes(
+    iri: str,
+    prefixes: dict[str, str],
+    common_prefixes: dict[str, str],
+) -> ObjType:
+    # we have three cases:
+    # 1. the IRI matches a common prefix but not a known prefix -> COMMON (e.g. rdf:type)
+    # 2. the IRI matches a known prefix -> UNINDEXED (e.g. wd:Q42)
+    # 3. the IRI matches neither -> UNKNOWN (e.g. fb:en.barack_obama in Wikidata)
+    is_common = find_longest_prefix(iri, common_prefixes) is not None
+    is_known = find_longest_prefix(iri, prefixes) is not None
+
+    if is_common and not is_known:
+        return ObjType.COMMON
+    elif is_known:
+        return ObjType.UNINDEXED
+    else:
+        return ObjType.UNKNOWN
 
 
 def is_embedding_index(index: SearchIndex) -> bool:

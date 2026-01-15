@@ -1,4 +1,5 @@
 import dbm
+import os
 import json
 
 
@@ -9,7 +10,7 @@ class Cache:
     @staticmethod
     def try_load(cache_dir: str):
         try:
-            db = dbm.open(cache_dir, "r")
+            db = dbm.open(os.path.join(cache_dir, "db"), "r")
             return Cache(db)
         except Exception:
             return None
