@@ -9,10 +9,18 @@ from universal_ml_utils.io import dump_json, load_json, load_jsonl
 from universal_ml_utils.logging import get_logger
 
 from grasp.configs import ModelConfig
+from grasp.manager.utils import load_kg_prefixes
 from grasp.model import Message, call_model
 from grasp.sparql.metrics import f1_score
 from grasp.sparql.types import AskResult, SelectResult
-from grasp.sparql.utils import execute, get_endpoint
+from grasp.sparql.utils import (
+    execute,
+    get_endpoint,
+    load_sparql_parser,
+)
+from grasp.sparql.utils import (
+    fix_prefixes as fix_sparql_prefixes,
+)
 from grasp.tasks.sparql_qa.examples import SparqlQaSample
 from grasp.utils import format_message, is_invalid_evaluation, is_invalid_output
 
@@ -82,12 +90,22 @@ def evaluate_f1(
     timeout: float = 300.0,
     retry_failed: bool = False,
     exact_after: int = 1024,
+    fix_prefixes: bool = False,
     log_level: str | int | None = None,
 ) -> None:
     logger = get_logger("GRASP EVALUATION", log_level)
 
     if endpoint is None:
         endpoint = get_endpoint(kg)
+
+    parser = load_sparql_parser()
+    prefixes = load_kg_prefixes(kg, endpoint)
+
+    def fix(sparql: str) -> str:
+        if not fix_prefixes:
+            return sparql
+
+        return fix_sparql_prefixes(sparql, parser, prefixes)
 
     evaluation_file = get_evaluation_file(prediction_file)
     predictions, evaluations = load_predictions_and_evaluations(
@@ -121,7 +139,7 @@ def evaluate_f1(
                 continue
 
         sparql = inputs[id].sparql
-        target_result, target_err = get_result_or_error(sparql, endpoint, timeout)
+        target_result, target_err = get_result_or_error(fix(sparql), endpoint, timeout)
         evaluations[id] = {
             "target": {
                 "err": target_err,
@@ -140,7 +158,7 @@ def evaluate_f1(
         pred_err = "No prediction"
         pred_result = None
         if sparql is not None:
-            pred_result, pred_err = get_result_or_error(sparql, endpoint, timeout)
+            pred_result, pred_err = get_result_or_error(fix(sparql), endpoint, timeout)
 
         if pred_result is not None:
             score = f1_score(pred_result, target_result, exact_after)

@@ -9,6 +9,7 @@ from collections import deque
 from dataclasses import dataclass
 from logging import Logger
 
+from search_rdf.model import TextEmbeddingModel
 import torch
 from grammar_utils.parse import LR1Parser
 from peft import PeftModel
@@ -177,6 +178,8 @@ MAX_IRIS = 131_072
 class GRISPRunConfig(BaseModel):
     kg: str
     endpoint: str | None = None
+
+    embedding_model: str = "Qwen/Qwen3-Embedding-0.6B"
 
     temperature: float | None = 0.4
     min_p: float | None = None
@@ -716,7 +719,13 @@ def main(args: argparse.Namespace) -> None:
             f"Using separate model {selection_model.config.name_or_path} for selection"  # type: ignore
         )
 
-    manager = load_kg_manager(KgConfig(kg=run_cfg.kg, endpoint=run_cfg.endpoint))
+    kg_config = KgConfig(kg=run_cfg.kg, endpoint=run_cfg.endpoint)
+    manager = load_kg_manager(kg_config)
+
+    if kg_config.has_embedding_index:
+        model = TextEmbeddingModel(run_cfg.embedding_model)
+        manager.set_embedding_model(model)
+
     parser = load_sparql_parser()
 
     # adapted from GRASP cli

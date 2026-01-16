@@ -281,6 +281,12 @@ def parse_args() -> argparse.Namespace:
         help="Result size after which exact F1 score instead of assignment F1 score "
         "is used (due to performance reasons)",
     )
+    eval_f1_parser.add_argument(
+        "--fix-prefixes",
+        action="store_true",
+        help="Try to fix missing prefix issues in target and prediction SPARQL queries "
+        "before evaluating them",
+    )
 
     eval_judge_parser = eval_subparsers.add_parser(
         "judge",
@@ -699,6 +705,7 @@ def evaluate_grasp(args: argparse.Namespace) -> None:
             args.timeout,
             args.retry_failed,
             args.exact_after,
+            args.fix_prefixes,
             args.log_level,
         )
 
