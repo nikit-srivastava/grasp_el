@@ -120,7 +120,7 @@ def evaluate_f1(
     inputs = load_inputs(input_file)
 
     logger.info(
-        f"Evaluating {len(predictions):,} predictions "
+        f"Evaluating {len(predictions):,} predictions from {prediction_file} "
         f"for {len(inputs):,} inputs from {input_file} "
         f"against SPARQL endpoint {endpoint}"
     )
