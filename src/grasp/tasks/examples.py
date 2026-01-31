@@ -152,6 +152,6 @@ def load_example_indices(
 
         assert model is not None, "Model must be provided to load example indices"
 
-        indices[kg] = index_cls.load(kg.example_index, model)
+        indices[kg.kg] = index_cls.load(kg.example_index, model)
 
     return indices

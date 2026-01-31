@@ -802,6 +802,7 @@ def execute(
     request_timeout: float | tuple[float, float] | None = REQUEST_TIMEOUT,
     max_retries: int = 0,
     read_timeout: float | None = READ_TIMEOUT,
+    **kwargs: Any,
 ) -> SelectResult | AskResult:
     max_retries = max(0, max_retries)
     for i in range(max_retries + 1):
@@ -815,6 +816,7 @@ def execute(
                 data={"query": sparql},
                 timeout=request_timeout,
                 stream=True,
+                **kwargs,
             )
 
             response.raise_for_status()

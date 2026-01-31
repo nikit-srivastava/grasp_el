@@ -36,7 +36,7 @@ from grasp.notes import (
 )
 from grasp.server import serve
 from grasp.tasks import Task, default_input_field
-from grasp.tasks.examples import ExampleIndex, load_example_indices, task_to_index
+from grasp.tasks.examples import load_example_indices, task_to_index
 from grasp.utils import (
     get_available_knowledge_graphs,
     is_invalid_output,
