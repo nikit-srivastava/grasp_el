@@ -125,6 +125,8 @@ def evaluate_f1(
         f"against SPARQL endpoint {endpoint}"
     )
 
+    num_invalid_outputs = 0
+    num_invalid_evaluations = 0
     for pred in tqdm(
         predictions,
         desc="Evaluating",
@@ -134,6 +136,7 @@ def evaluate_f1(
             "Only SPARQL QA task is supported for evaluation"
         )
         if is_invalid_output(pred):
+            num_invalid_outputs += 1
             continue
 
         id = pred["id"]
@@ -152,16 +155,18 @@ def evaluate_f1(
         }
 
         if target_result is None:
+            num_invalid_evaluations += 1
             dump_json(evaluations, evaluation_file)
             continue
 
         output = pred["output"]
-        sparql = None if output is None else fix(output["sparql"])
-
+        sparql = None
         score = 0.0
         pred_err = "No prediction"
         pred_result = None
-        if sparql is not None:
+
+        if output is not None and output["sparql"] is not None:
+            sparql = fix(output["sparql"]) or output["sparql"]
             pred_result, pred_err = get_result_or_error(sparql, endpoint, timeout)
 
         if pred_result is not None:
@@ -176,6 +181,9 @@ def evaluate_f1(
         }
         dump_json(evaluations, evaluation_file)
 
+        if pred_result is None:
+            num_invalid_evaluations += 1
+
     dump_json(evaluations, evaluation_file)
     logger.info(f"{len(evaluations):,} evaluation results saved to {evaluation_file}")
     f1_scores = [
@@ -185,6 +193,8 @@ def evaluate_f1(
     ]
     f1_avg = sum(f1_scores) / len(f1_scores) if f1_scores else 0.0
     logger.info(f"Average F1 score (ignoring empty targets): {f1_avg:.2%}")
+    logger.info(f"Invalid outputs: {num_invalid_outputs:,}")
+    logger.info(f"Invalid evaluations: {num_invalid_evaluations:,}")
 
 
 def judge_candidates(
