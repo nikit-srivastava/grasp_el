@@ -206,7 +206,7 @@ class KgManager:
                     if val.lang is not None:
                         formatted += f" (lang:{val.lang})"
                     elif val.datatype is not None:
-                        datatype = self.format_iri(val.datatype)
+                        datatype = self.format_iri(f"<{val.datatype}>")
                         formatted += f" ({datatype})"
 
                     formatted_row.append(formatted)
@@ -503,7 +503,7 @@ class KgManager:
 
             if binding.typ == "literal":
                 if binding.datatype is not None:
-                    datatype = self.format_iri("<" + binding.datatype + ">")
+                    datatype = self.format_iri(f"<{binding.datatype}>")
                     infos.append(datatype)
                 elif binding.lang is not None:
                     infos.append(binding.lang)
