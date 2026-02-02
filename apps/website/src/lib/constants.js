@@ -37,12 +37,12 @@ export const TASKS = Object.freeze([
     tooltip:
       'Answer questions by retrieving relevant information from knowledge graphs.'
   },
-  // {
-  //   id: 'cea',
-  //   name: 'Cell Entity Annotation',
-  //   tooltip:
-  //     'Upload a CSV table to annotate each cell with corresponding knowledge graph entities.'
-  // }
+  {
+    id: 'cea',
+    name: 'Cell Entity Annotation',
+    tooltip:
+      'Upload a CSV table to annotate each cell with corresponding knowledge graph entities.'
+  }
 ]);
 
 export const QLEVER_HOSTS = Object.freeze([
