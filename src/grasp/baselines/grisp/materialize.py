@@ -1,11 +1,12 @@
 import argparse
 import os
 import random
+from typing import Iterator
 
 from search_rdf.model import TextEmbeddingModel
 from tqdm import tqdm
-from universal_ml_utils.io import dump_jsonl
-from universal_ml_utils.logging import setup_logging
+from universal_ml_utils.io import dump_jsonl, load_jsonl
+from universal_ml_utils.logging import get_logger, setup_logging
 
 from grasp.baselines.grisp.data import (
     GRISPMaterializedSample,
@@ -130,27 +131,43 @@ def materialize_sample(
 def main(args: argparse.Namespace) -> None:
     # to show info from kg manager
     setup_logging(args.log_level)
+    logger = get_logger("MATERIALIZATION", args.log_level)
 
-    if os.path.exists(args.output_file) and not args.overwrite:
-        raise FileExistsError(
-            f"Output file {args.output_file} already exists. "
-            "Use --overwrite to overwrite."
-        )
-    elif args.is_val and args.val_output_file is not None:
+    if args.is_val and args.val_output_file is not None:
         raise ValueError("Cannot specify --val-output-file when --is-val is set.")
 
-    random.seed(args.seed)
+    samples = load_samples([args.input_file])
+    skip = 0
+    if os.path.exists(args.output_file) and not args.overwrite:
+        skip = len(load_jsonl(args.output_file))
+        logger.info(
+            f"Output file {args.output_file} already exists, "
+            f"skipping {skip:,} existing materialized samples"
+        )
+
+    val_skip = 0
+    if (
+        args.val_output_file is not None
+        and os.path.exists(args.val_output_file)
+        and not args.overwrite
+    ):
+        val_skip = len(load_jsonl(args.val_output_file))
+        logger.info(
+            f"Validation output file {args.val_output_file} already exists, "
+            f"skipping {val_skip:,} existing materialized samples"
+        )
+
     desc = "validation" if args.is_val else "training"
 
-    samples = load_samples([args.input_file])
     if args.val_output_file is not None:
         val_size = int(len(samples) * args.val_split)
-        assert val_size > 0, "Validation split is too small."
+        random.seed(args.seed)
         random.shuffle(samples)
-        val_samples = samples[:val_size]
-        samples = samples[val_size:]
+        val_samples = samples[val_skip:val_size]
+        samples = samples[val_size + skip :]
     else:
         val_samples = None
+        samples = samples[skip:]
 
     config = KgConfig(kg=args.knowledge_graph, endpoint=args.endpoint)
     manager = load_kg_manager(config)
@@ -159,30 +176,42 @@ def main(args: argparse.Namespace) -> None:
         model = TextEmbeddingModel(args.embedding_model)
         manager.set_embedding_model(model)
 
-    materialized = []
-    for sample in tqdm(samples, desc=f"Materializing {desc} samples"):
-        assert isinstance(sample, GRISPSample), "Expected non-materialized GRISP sample"
-        materialized_sample = materialize_sample(
-            sample,
-            manager,
-            args.num_materializations,
-            args.is_val,
-        )
-        materialized.append(materialized_sample.model_dump())
+    def materialize_train() -> Iterator[dict]:
+        for sample in tqdm(samples, desc=f"Materializing {desc} samples"):
+            assert isinstance(sample, GRISPSample), (
+                "Expected non-materialized GRISP sample"
+            )
+            materialized_sample = materialize_sample(
+                sample,
+                manager,
+                args.num_materializations,
+                args.is_val,
+            )
 
-    dump_jsonl(materialized, args.output_file)
+            yield materialized_sample.model_dump()
+
+    dump_jsonl(
+        materialize_train(),
+        args.output_file,
+        "w" if skip == 0 else "a",
+    )
 
     if args.val_output_file is None or val_samples is None:
         return
 
-    materialized = []
-    for sample in tqdm(val_samples, desc="Materializing validation samples"):
-        assert isinstance(sample, GRISPSample), "Expected non-materialized GRISP sample"
+    def materialize_val() -> Iterator[dict]:
+        for sample in tqdm(val_samples, desc="Materializing validation samples"):
+            assert isinstance(sample, GRISPSample), (
+                "Expected non-materialized GRISP sample"
+            )
+            materialized_sample = materialize_sample(sample, manager, 1, is_val=True)
+            yield materialized_sample.model_dump()
 
-        materialized_sample = materialize_sample(sample, manager, 1, is_val=True)
-        materialized.append(materialized_sample.model_dump())
-
-    dump_jsonl(materialized, args.val_output_file)
+    dump_jsonl(
+        materialize_val(),
+        args.val_output_file,
+        "w" if val_skip == 0 else "a",
+    )
 
 
 if __name__ == "__main__":
