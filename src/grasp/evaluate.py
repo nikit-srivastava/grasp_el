@@ -247,7 +247,9 @@ You are an expert judge for evaluating SPARQL queries.
 You are given a question and two or more SPARQL query candidates \
 that attempt to answer the question. Your task is to determine \
 which of the candidate queries is the best answer to the question, \
-or whether they are all equally good.
+or whether they are all equally good. The query logic and correctness \
+should be your primary criteria for judgement, while other factors such as \
+additional information or human readability should be secondary.
 
 Think before you finalize your answer with the provided judge function.""",
         ),
