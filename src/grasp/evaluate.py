@@ -1,3 +1,4 @@
+import json
 import os
 import random
 import string
@@ -305,9 +306,6 @@ def evaluate_with_judge(
                 "Only SPARQL QA task is supported for judge evaluation"
             )
 
-            if is_invalid_output(pred):
-                continue
-
             id = pred["id"]
             assert id not in grouped, f"Duplicate prediction for id {id}"
             grouped[id] = pred
@@ -319,6 +317,9 @@ def evaluate_with_judge(
         group_predictions(load_jsonl(prediction_file))
         for prediction_file in prediction_files
     ]
+
+    for preds, pred_file in zip(predictions, prediction_files):
+        logger.info(f"Loaded {len(preds):,} valid predictions from {pred_file}")
 
     evaluations = {
         "prediction_files": prediction_files,
@@ -373,28 +374,38 @@ def evaluate_with_judge(
                 continue
 
         candidates = []
-        for preds in predictions:
+        for preds, pred_file in zip(predictions, prediction_files):
             if id not in preds:
+                logger.debug(f"Skipping missing prediction in {pred_file} for id {id}")
                 break
 
             pred = preds[id]
             if is_invalid_output(pred):
+                logger.debug(
+                    f"Skipping invalid prediction in {pred_file} for id {id}:"
+                    f"\n{json.dumps(pred, indent=2)}"
+                )
                 break
 
-            output = pred["output"]
-            if output is None or output["sparql"] is None:
-                break
-
-            candidates.append(output["formatted"])
+            candidates.append(pred)
 
         if len(candidates) != len(prediction_files):
             # not every prediction file has a prediction for this id
             continue
 
         # shuffle candidates to avoid position bias in judging
-        indices = list(range(len(candidates)))
-        random.shuffle(indices)
-        candidates = [candidates[i] for i in indices]
+        indices = [
+            i for i in range(len(candidates)) if not is_invalid_output(candidates[i])
+        ]
+
+        if not indices:
+            # if not output is valid, skip judging and make it a tie
+            evaluation = {
+                "exaplanation": "No valid output",
+                "verdict": None,
+                "err": None,
+            }
+            continue
 
         evaluation: dict = {
             "explanation": None,
@@ -402,9 +413,17 @@ def evaluate_with_judge(
             "err": None,
         }
         try:
+            random.shuffle(indices)
+            formatted = [
+                candidates[i]["output"]["formatted"]
+                if candidates[i].get("output") is not None
+                else "No SPARQL query generated/found"
+                for i in indices
+            ]
+
             explanation, verdict = judge_candidates(
                 sample.question,
-                candidates,
+                formatted,
                 judge_config,
                 logger,
             )

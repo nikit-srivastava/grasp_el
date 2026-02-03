@@ -176,7 +176,7 @@ def is_invalid_output(
     if has_error:
         return True
 
-    if none_output_invalid and output.get("output", None) is None:
+    if none_output_invalid and output.get("output") is None:
         return True
 
     for message in output.get("messages", []):
