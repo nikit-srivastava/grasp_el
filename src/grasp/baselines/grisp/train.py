@@ -1,4 +1,5 @@
 import argparse
+import math
 import os
 import random
 from logging import Logger
@@ -6,7 +7,7 @@ from logging import Logger
 import yaml
 from peft import LoraConfig, PeftModel, get_peft_model
 from pydantic import BaseModel
-from torch.utils.data import ConcatDataset, Dataset
+from torch.utils.data import ConcatDataset, Dataset, Sampler
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -22,7 +23,6 @@ from universal_ml_utils.logging import get_logger
 
 from grasp.baselines.grisp.data import (
     GRISPCollator,
-    GRISPMaterializedMixin,
     GRISPMaterializedSelectionDataset,
     GRISPMaterializedSkeletonDataset,
     GRISPSelectionDataset,
@@ -30,8 +30,8 @@ from grasp.baselines.grisp.data import (
     load_samples,
 )
 from grasp.baselines.grisp.utils import (
+    SeededRandomSampler,
     find_latest_checkpoint,
-    find_wandb_run_id_from_name,
     set_chat_template,
 )
 from grasp.configs import KgConfig
@@ -213,6 +213,49 @@ def load_datasets(
     return train_data, val_data
 
 
+def advance_dataset(
+    dataset: Dataset,
+    seed: int,
+    epochs_trained: int,
+    batch_size: int,
+    batches_in_current_epoch: int,
+) -> None:
+    n = len(dataset)  # type: ignore
+    sampler = SeededRandomSampler(n, seed)
+
+    # past epochs
+    for _ in range(epochs_trained):
+        for idx in sampler:
+            # access to trigger counter updates
+            _ = dataset[idx]
+
+    num_seen = min(batches_in_current_epoch * batch_size, n)
+
+    # partial epoch
+    i = 0
+    for idx in sampler:
+        if i >= num_seen:
+            break
+        # access to trigger counter updates
+        _ = dataset[idx]
+        i += 1
+
+
+class GRISPTrainer(Trainer):
+    def __init__(self, *args, epochs_trained: int = 0, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.epochs_trained = epochs_trained
+
+    def _get_train_sampler(self, dataset: Dataset | None = None) -> Sampler:  # type: ignore
+        if dataset is None:
+            dataset = self.train_dataset  # type: ignore
+        return SeededRandomSampler(
+            len(dataset),  # type: ignore
+            seed=self.args.seed,
+            epoch=self.epochs_trained,
+        )
+
+
 def main(args: argparse.Namespace) -> None:
     logger = get_logger("GRISP TRAIN", args.log_level)
 
@@ -258,8 +301,8 @@ def main(args: argparse.Namespace) -> None:
     with open(os.path.join(args.output_dir, "config.yaml"), "w") as f:
         yaml.dump(config.model_dump(), f)
 
-    effective_batch_size = config.batch_size * config.gradient_accumulation_steps
-    steps_per_epoch = len(train_data) // effective_batch_size  # type: ignore
+    batches_per_epoch = math.ceil(len(train_data) / config.batch_size)  # type: ignore
+    steps_per_epoch = math.ceil(batches_per_epoch / config.gradient_accumulation_steps)
     logging_steps = max(1, steps_per_epoch // 100)  # log 100 times per epoch
 
     # eval once per epoch, but at least 10 times during training
@@ -267,32 +310,31 @@ def main(args: argparse.Namespace) -> None:
     eval_steps = max(1, min(steps_per_epoch, total_steps // 10))
 
     report_to = None
-    wandb_project = os.environ.get("WANDB_PROJECT")
-    wandb_entity = os.environ.get("WANDB_ENTITY")
-    if wandb_project and wandb_entity:
+    if os.environ.get("WANDB_PROJECT"):
         os.environ["WANDB_NAME"] = run_name
         report_to = "wandb"
 
+    epochs_trained = 0
     if checkpoint is not None:
         logger.info(f"Resuming training from checkpoint {checkpoint}")
         trainer_state = load_json(os.path.join(checkpoint, "trainer_state.json"))
-        epochs_trained = int(trainer_state["global_step"] // steps_per_epoch)
-        datasets = (
-            train_data.datasets
-            if isinstance(train_data, ConcatDataset)
-            else [train_data]
+        global_step = trainer_state["global_step"]
+        epochs_trained = global_step // steps_per_epoch
+        steps_in_current_epoch = global_step % steps_per_epoch
+        batches_in_current_epoch = (
+            steps_in_current_epoch * config.gradient_accumulation_steps
         )
-        for ds in datasets:
-            if not isinstance(ds, GRISPMaterializedMixin):
-                continue
 
-            ds.set_epochs_trained(epochs_trained)
-
-        if wandb_project and wandb_entity:
-            run_id = find_wandb_run_id_from_name(wandb_entity, wandb_project, run_name)
-            assert run_id is not None, f"Could not find wandb run with name {run_name}"
-            os.environ["WANDB_RESUME"] = "must"
-            os.environ["WANDB_RUN_ID"] = run_id
+        if config.materialized:
+            # materialized datasets have counters that track seen samples,
+            # so we need to restore the correct counter state
+            advance_dataset(
+                train_data,
+                seed=config.seed,
+                epochs_trained=epochs_trained,
+                batch_size=config.batch_size,
+                batches_in_current_epoch=batches_in_current_epoch,
+            )
 
     training_args = TrainingArguments(
         output_dir=args.output_dir,
@@ -326,7 +368,7 @@ def main(args: argparse.Namespace) -> None:
         dataloader_prefetch_factor=4 if config.num_workers > 0 else None,
     )
 
-    trainer = Trainer(
+    trainer = GRISPTrainer(
         model=model,
         processing_class=tokenizer,
         args=training_args,
@@ -336,6 +378,7 @@ def main(args: argparse.Namespace) -> None:
         callbacks=[
             EarlyStoppingCallback(max(10, round(config.num_epochs / 10))),
         ],
+        epochs_trained=epochs_trained,
     )
 
     trainer.train(resume_from_checkpoint=checkpoint)

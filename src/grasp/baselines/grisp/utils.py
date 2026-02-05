@@ -1,9 +1,11 @@
 import glob
 import os
+import random
 from importlib import resources
-from typing import Callable
+from typing import Callable, Iterator
 
 from grammar_utils.parse import LR1Parser
+from torch.utils.data import Sampler
 from transformers import PreTrainedTokenizerBase
 from universal_ml_utils.io import load_json
 
@@ -82,12 +84,18 @@ def find_checkpoint(
     return checkpoints[0]
 
 
-def find_wandb_run_id_from_name(entity: str, project: str, run_name: str) -> str | None:
-    import wandb
+class SeededRandomSampler(Sampler):
+    def __init__(self, n: int, seed: int, epoch: int = 0) -> None:
+        self.n = n
+        self.seed = seed
+        self.epoch = epoch
 
-    api = wandb.Api()
-    runs = api.runs(path=f"{entity}/{project}")
-    for r in runs:
-        if r.name == run_name:
-            return r.id
-    return None
+    def __iter__(self) -> Iterator[int]:
+        rand = random.Random(self.seed + self.epoch)
+        permutation = list(range(self.n))
+        rand.shuffle(permutation)
+        self.epoch += 1
+        return iter(permutation)
+
+    def __len__(self) -> int:
+        return self.n

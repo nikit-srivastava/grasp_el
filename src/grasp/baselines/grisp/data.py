@@ -409,18 +409,7 @@ def tokenize_and_log(
     return output
 
 
-class GRISPMaterializedMixin:
-    def set_epochs_trained(self, epochs: int) -> None:
-        assert hasattr(self, "counter"), (
-            "Dataset must have a counter attribute to set epochs trained"
-        )
-        assert hasattr(self, "__len__"), (
-            "Dataset must have a __len__ method to set epochs trained"
-        )
-        self.counter = [epochs] * len(self)  # type: ignore
-
-
-class GRISPMaterializedSkeletonDataset(Dataset, GRISPMaterializedMixin):
+class GRISPMaterializedSkeletonDataset(Dataset):
     def __init__(
         self,
         samples: list[GRISPMaterializedSample],
@@ -446,9 +435,11 @@ class GRISPMaterializedSkeletonDataset(Dataset, GRISPMaterializedMixin):
         sample = self.samples[idx]
 
         count = self.counter[idx]
-        self.counter[idx] += 1
-
         messages = sample.skeletons[count % len(sample.skeletons)]
+        self.counter[idx] += 1
+        self.logger.debug(
+            f"({type(self).__name__}) Accessing sample {idx} count {count}"
+        )
 
         return tokenize_and_log(
             messages,
@@ -501,7 +492,7 @@ class GRISPSkeletonDataset(Dataset):
         )
 
 
-class GRISPMaterializedSelectionDataset(Dataset, GRISPMaterializedMixin):
+class GRISPMaterializedSelectionDataset(Dataset):
     def __init__(
         self,
         samples: list[GRISPMaterializedSample],
@@ -512,6 +503,7 @@ class GRISPMaterializedSelectionDataset(Dataset, GRISPMaterializedMixin):
         self.samples = [sample for sample in samples if sample.has_selections]
         self.tokenizer = tokenizer
         self.mask_inputs = mask_inputs
+
         self.logger = get_logger("GRISP MATERIALIZED SELECTION DATASET", log_level)
 
         self.counter = [0] * len(self.samples)
@@ -523,9 +515,11 @@ class GRISPMaterializedSelectionDataset(Dataset, GRISPMaterializedMixin):
         sample = self.samples[idx]
 
         count = self.counter[idx]
-        self.counter[idx] += 1
-
         messages = sample.selections[count % len(sample.selections)]
+        self.counter[idx] += 1
+        self.logger.debug(
+            f"({type(self).__name__}) Accessing sample {idx} count {count}"
+        )
 
         return tokenize_and_log(
             messages,
