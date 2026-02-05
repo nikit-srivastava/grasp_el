@@ -17,17 +17,23 @@ from transformers import (
     TrainingArguments,
 )
 from universal_ml_utils.configuration import load_config
+from universal_ml_utils.io import load_json
 from universal_ml_utils.logging import get_logger
 
 from grasp.baselines.grisp.data import (
     GRISPCollator,
+    GRISPMaterializedMixin,
     GRISPMaterializedSelectionDataset,
     GRISPMaterializedSkeletonDataset,
     GRISPSelectionDataset,
     GRISPSkeletonDataset,
     load_samples,
 )
-from grasp.baselines.grisp.utils import set_chat_template
+from grasp.baselines.grisp.utils import (
+    find_latest_checkpoint,
+    find_wandb_run_id_from_name,
+    set_chat_template,
+)
 from grasp.configs import KgConfig
 from grasp.manager import load_kg_manager
 
@@ -240,12 +246,14 @@ def main(args: argparse.Namespace) -> None:
         args.log_level,
     )
 
-    logger.info(f"Train dataset size: {len(train_data):,} samples")  # type: ignore
-    logger.info(f"Validation dataset size: {len(val_data):,} samples")  # type: ignore
-
     run_name = os.path.basename(args.output_dir)
 
     os.makedirs(args.output_dir, exist_ok=True)
+    checkpoint = find_latest_checkpoint(args.output_dir)
+
+    logger.info(f"Train dataset size: {len(train_data):,} samples")  # type: ignore
+    logger.info(f"Validation dataset size: {len(val_data):,} samples")  # type: ignore
+
     # save config
     with open(os.path.join(args.output_dir, "config.yaml"), "w") as f:
         yaml.dump(config.model_dump(), f)
@@ -259,9 +267,32 @@ def main(args: argparse.Namespace) -> None:
     eval_steps = max(1, min(steps_per_epoch, total_steps // 10))
 
     report_to = None
-    if os.environ.get("WANDB_PROJECT"):
+    wandb_project = os.environ.get("WANDB_PROJECT")
+    wandb_entity = os.environ.get("WANDB_ENTITY")
+    if wandb_project and wandb_entity:
         os.environ["WANDB_NAME"] = run_name
         report_to = "wandb"
+
+    if checkpoint is not None:
+        logger.info(f"Resuming training from checkpoint {checkpoint}")
+        trainer_state = load_json(os.path.join(checkpoint, "trainer_state.json"))
+        epochs_trained = int(trainer_state["global_step"] // steps_per_epoch)
+        datasets = (
+            train_data.datasets
+            if isinstance(train_data, ConcatDataset)
+            else [train_data]
+        )
+        for ds in datasets:
+            if not isinstance(ds, GRISPMaterializedMixin):
+                continue
+
+            ds.set_epochs_trained(epochs_trained)
+
+        if wandb_project and wandb_entity:
+            run_id = find_wandb_run_id_from_name(wandb_entity, wandb_project, run_name)
+            assert run_id is not None, f"Could not find wandb run with name {run_name}"
+            os.environ["WANDB_RESUME"] = "must"
+            os.environ["WANDB_RUN_ID"] = run_id
 
     training_args = TrainingArguments(
         output_dir=args.output_dir,
@@ -269,8 +300,10 @@ def main(args: argparse.Namespace) -> None:
         do_eval=True,
         eval_strategy="steps",
         eval_steps=eval_steps,
-        save_strategy="best",
+        save_strategy="steps",
         save_total_limit=1,
+        save_steps=eval_steps,
+        load_best_model_at_end=True,
         logging_strategy="steps",
         logging_steps=logging_steps,
         per_device_train_batch_size=config.batch_size,
@@ -305,7 +338,7 @@ def main(args: argparse.Namespace) -> None:
         ],
     )
 
-    trainer.train()
+    trainer.train(resume_from_checkpoint=checkpoint)
 
 
 if __name__ == "__main__":

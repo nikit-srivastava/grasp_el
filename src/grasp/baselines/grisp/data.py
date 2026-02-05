@@ -409,7 +409,18 @@ def tokenize_and_log(
     return output
 
 
-class GRISPMaterializedSkeletonDataset(Dataset):
+class GRISPMaterializedMixin:
+    def set_epochs_trained(self, epochs: int) -> None:
+        assert hasattr(self, "counter"), (
+            "Dataset must have a counter attribute to set epochs trained"
+        )
+        assert hasattr(self, "__len__"), (
+            "Dataset must have a __len__ method to set epochs trained"
+        )
+        self.counter = [epochs] * len(self)  # type: ignore
+
+
+class GRISPMaterializedSkeletonDataset(Dataset, GRISPMaterializedMixin):
     def __init__(
         self,
         samples: list[GRISPMaterializedSample],
@@ -426,7 +437,7 @@ class GRISPMaterializedSkeletonDataset(Dataset):
             log_level,
         )
 
-        self.counter = {}
+        self.counter = [0] * len(self.samples)
 
     def __len__(self) -> int:
         return len(self.samples)
@@ -434,8 +445,8 @@ class GRISPMaterializedSkeletonDataset(Dataset):
     def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
         sample = self.samples[idx]
 
-        count = self.counter.get(idx, 0)
-        self.counter[idx] = count + 1
+        count = self.counter[idx]
+        self.counter[idx] += 1
 
         messages = sample.skeletons[count % len(sample.skeletons)]
 
@@ -490,7 +501,7 @@ class GRISPSkeletonDataset(Dataset):
         )
 
 
-class GRISPMaterializedSelectionDataset(Dataset):
+class GRISPMaterializedSelectionDataset(Dataset, GRISPMaterializedMixin):
     def __init__(
         self,
         samples: list[GRISPMaterializedSample],
@@ -503,7 +514,7 @@ class GRISPMaterializedSelectionDataset(Dataset):
         self.mask_inputs = mask_inputs
         self.logger = get_logger("GRISP MATERIALIZED SELECTION DATASET", log_level)
 
-        self.counter = {}
+        self.counter = [0] * len(self.samples)
 
     def __len__(self) -> int:
         return len(self.samples)
@@ -511,8 +522,8 @@ class GRISPMaterializedSelectionDataset(Dataset):
     def __getitem__(self, idx: int) -> dict:
         sample = self.samples[idx]
 
-        count = self.counter.get(idx, 0)
-        self.counter[idx] = count + 1
+        count = self.counter[idx]
+        self.counter[idx] += 1
 
         messages = sample.selections[count % len(sample.selections)]
 

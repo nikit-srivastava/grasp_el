@@ -1,5 +1,4 @@
 import argparse
-import glob
 import json
 import os
 import random
@@ -9,11 +8,11 @@ from collections import deque
 from dataclasses import dataclass
 from logging import Logger
 
-from search_rdf.model import TextEmbeddingModel
 import torch
 from grammar_utils.parse import LR1Parser
 from peft import PeftModel
 from pydantic import BaseModel
+from search_rdf.model import TextEmbeddingModel
 from tqdm import tqdm
 from transformers import (
     AutoModelForCausalLM,
@@ -23,7 +22,7 @@ from transformers import (
     PreTrainedTokenizerBase,
 )
 from universal_ml_utils.configuration import load_config
-from universal_ml_utils.io import dump_json, dump_jsonl, load_json, load_jsonl
+from universal_ml_utils.io import dump_json, dump_jsonl, load_jsonl
 from universal_ml_utils.logging import get_logger
 from universal_ml_utils.ops import extract_field
 
@@ -35,7 +34,11 @@ from grasp.baselines.grisp.data import (
     get_skeleton_prompt,
 )
 from grasp.baselines.grisp.train import GRISPTrainConfig
-from grasp.baselines.grisp.utils import load_sparql_parser, set_chat_template
+from grasp.baselines.grisp.utils import (
+    find_best_checkpoint,
+    load_sparql_parser,
+    set_chat_template,
+)
 from grasp.configs import KgConfig
 from grasp.manager import KgManager, load_kg_manager
 from grasp.sparql.types import (
@@ -627,36 +630,13 @@ def is_invalid_output(output: dict | None, none_output_invalid: bool = False) ->
     )
 
 
-def find_best_checkpoint(run_directory: str) -> str:
-    # all subdir starting with checkpoint-*
-    checkpoints = glob.glob(os.path.join(run_directory, "checkpoint-*"))
-    assert len(checkpoints) > 0, "No checkpoints found"
-
-    def best_ckpt_key(checkpoint_dir: str) -> int | float:
-        path = os.path.join(checkpoint_dir, "trainer_state.json")
-        state = load_json(path)
-        global_step = state["global_step"]
-
-        log_entry = next(
-            (
-                entry
-                for entry in state["log_history"]
-                if entry["step"] == global_step and entry.get("eval_loss") is not None
-            ),
-        )
-        # sort by eval loss
-        return log_entry["eval_loss"]
-
-    checkpoints.sort(key=best_ckpt_key)
-    return checkpoints[0]
-
-
 def load_model_and_tokenizer(
     directory: str,
     device: str,
     logger: Logger,
 ) -> tuple[PreTrainedModel | PeftModel, PreTrainedTokenizerBase]:
     checkpoint = find_best_checkpoint(directory)
+    assert checkpoint is not None, f"No best checkpoint found in {directory}"
     logger.info(f"Best checkpoint found at {checkpoint}")
 
     train_cfg_path = os.path.join(directory, "config.yaml")
