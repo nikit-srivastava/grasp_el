@@ -1,5 +1,11 @@
-/* global __API_BASE__ */
+/* global __API_BASE__ __COPYRIGHT__ */
 import { base } from '$app/paths';
+
+/**
+ * Copyright text, set at build time via the COPYRIGHT env var.
+ * Defaults to 'University of Freiburg'.
+ */
+export const COPYRIGHT = __COPYRIGHT__;
 
 /**
  * API base URL, set at build time via the API_BASE env var.

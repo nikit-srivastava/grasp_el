@@ -1,20 +1,42 @@
 <script>
   export let code = '';
   export let endpoint = null;
+
+  const QLEVER_HOSTS = [
+    'qlever.cs.uni-freiburg.de',
+    'qlever.informatik.uni-freiburg.de',
+    'qlever.dev'
+  ];
+
+  function deriveQleverLink() {
+    if (!code || !endpoint) return null;
+    try {
+      const url = new URL(endpoint);
+      if (!QLEVER_HOSTS.includes(url.host)) return null;
+      const base = endpoint.replace('/api', '');
+      const separator = base.includes('?') ? '&' : '?';
+      return `${base}${separator}query=${encodeURIComponent(code)}&exec=true`;
+    } catch (error) {
+      console.warn('Failed to build QLever link', error);
+      return null;
+    }
+  }
+
+  const qleverLink = deriveQleverLink();
 </script>
 
 {#if code}
   <div class="sparql-block">
     <div class="sparql-block__label">SPARQL</div>
-    {#if endpoint}
+    {#if qleverLink}
       <div class="sparql-block__actions">
         <a
           class="sparql-link"
-          href={endpoint}
+          href={qleverLink}
           target="_blank"
           rel="noreferrer"
         >
-          Endpoint
+          Execute on QLever
         </a>
       </div>
     {/if}
@@ -27,7 +49,7 @@
 <style>
   .sparql-block {
     position: relative;
-    border: 1px solid rgba(37, 99, 235, 0.2);
+    border: 1px solid rgba(52, 74, 154, 0.2);
     border-radius: var(--radius-sm);
     background: #0f172a;
     color: #f8fafc;
@@ -85,11 +107,11 @@
     padding: 0.3rem 0.6rem;
     font-size: 0.75rem;
     font-weight: 600;
-    background: rgba(37, 99, 235, 0.2);
+    background: rgba(52, 74, 154, 0.2);
     color: #fff;
     backdrop-filter: blur(2px);
     text-decoration: none;
-    border: 1px solid rgba(37, 99, 235, 0.5);
+    border: 1px solid rgba(52, 74, 154, 0.5);
     transition: transform 0.2s ease;
   }
 

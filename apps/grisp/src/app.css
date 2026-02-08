@@ -12,10 +12,13 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 
-  --color-accent: #2563eb;
-  --color-accent-dark: #1d4ed8;
-  --color-accent-light: rgba(37, 99, 235, 0.08);
-  --color-accent-border: rgba(37, 99, 235, 0.25);
+  --color-uni-blue: #344a9a;
+  --color-uni-dark-blue: #000149;
+  --color-uni-red: #c1002a;
+  --color-uni-gray: #b4b4b4;
+  --color-uni-green: #00a082;
+  --color-uni-yellow: #beaa3c;
+  --color-uni-pink: #a35394;
 
   --text-primary: #1c1f2b;
   --text-subtle: #48506a;
@@ -48,7 +51,7 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: linear-gradient(180deg, rgba(37, 99, 235, 0.04), transparent 45%);
+  background: linear-gradient(180deg, rgba(52, 74, 154, 0.04), transparent 45%);
 }
 
 a {
@@ -59,7 +62,7 @@ a {
 a:hover,
 a:focus {
   text-decoration: underline;
-  text-decoration-color: rgba(37, 99, 235, 0.5);
+  text-decoration-color: rgba(52, 74, 154, 0.5);
 }
 
 #app {

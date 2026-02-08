@@ -8,12 +8,14 @@ SvelteKit web interface for the GRISP (Grammar-Regulated Interactive SPARQL gene
   We recommend using `nvm` to manage versions.
 - npm (ships with Node).
 
-Install project dependencies once:
+Install project dependencies:
 
 ```bash
 cd apps/grisp
 npm install
 ```
+
+This installs all required dependencies including markdown rendering libraries (marked, dompurify, highlight.js).
 
 ## Development
 
@@ -41,6 +43,7 @@ npm run preview
 |---|---|---|
 | `BASE_PATH` | `""` | SvelteKit path prefix (e.g. `/grisp`) for when the site is hosted under a subpath. |
 | `API_BASE` | `/api` | API base URL. Relative paths are prefixed with `BASE_PATH` (e.g. `BASE_PATH=/v1` + `API_BASE=/api` → `/v1/api`). Set to an absolute URL (e.g. `http://localhost:6790`) to talk directly to a GRISP server. |
+| `COPYRIGHT` | `University of Freiburg` | Copyright holder text displayed in the footer. |
 
 ## Docker
 
@@ -55,6 +58,7 @@ Override build args as needed:
 docker build -t grisp-website \
   --build-arg BASE_PATH=/grisp \
   --build-arg API_BASE=/api \
+  --build-arg COPYRIGHT="Your Organization" \
   .
 ```
 

@@ -1,5 +1,6 @@
 <script>
   import SparqlBlock from './SparqlBlock.svelte';
+  import MarkdownContent from './MarkdownContent.svelte';
 
   export let output;
 
@@ -12,6 +13,13 @@
   const result = out?.result ?? null;
   const formatted = out?.formatted ?? null;
   const endpoint = out?.endpoint ?? null;
+
+  // Helper to convert data to markdown
+  function toMarkdown(value) {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'string') return value;
+    return '```json\n' + JSON.stringify(value, null, 2) + '\n```';
+  }
 </script>
 
 <div class="output-card">
@@ -36,27 +44,21 @@
   {/if}
 
   {#if selections}
-    <div class="section">
-      <h3 class="section-title">Selections</h3>
-      <pre class="pre-block">{selections}</pre>
-    </div>
+    <MarkdownContent content={toMarkdown(selections)} />
   {/if}
 
   {#if result}
-    <div class="section">
-      <h3 class="section-title">Result</h3>
-      <pre class="pre-block">{result}</pre>
-    </div>
+    <MarkdownContent content={toMarkdown(result)} />
   {/if}
 
-  {#if !sparql && !error}
-    <p class="placeholder">No SPARQL query generated.</p>
+  {#if !sparql && !result && !error}
+    <p class="placeholder">No output generated.</p>
   {/if}
 </div>
 
 <style>
   .output-card {
-    border: 1px solid var(--color-accent-border);
+    border: 1px solid rgba(52, 74, 154, 0.25);
     border-radius: var(--radius-md);
     background: var(--surface-base);
     padding: var(--spacing-lg);
@@ -76,7 +78,7 @@
     margin: 0;
     font-size: 1.05rem;
     font-weight: 600;
-    color: var(--color-accent-dark);
+    color: var(--color-uni-dark-blue);
   }
 
   .chip {
@@ -84,8 +86,8 @@
     align-items: center;
     padding: 0.15rem 0.6rem;
     border-radius: 999px;
-    background: var(--color-accent-light);
-    color: var(--color-accent);
+    background: rgba(52, 74, 154, 0.08);
+    color: var(--color-uni-blue);
     font-size: 0.75rem;
     font-weight: 600;
   }
@@ -110,36 +112,6 @@
     white-space: pre-wrap;
     word-break: break-word;
     color: #7f1d1d;
-  }
-
-  .section {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-xs);
-  }
-
-  .section-title {
-    margin: 0;
-    font-size: 0.85rem;
-    font-weight: 600;
-    color: var(--text-subtle);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-
-  .pre-block {
-    margin: 0;
-    padding: var(--spacing-md);
-    background: #f8fafc;
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-sm);
-    font-family: 'Fira Code', 'SFMono-Regular', Consolas, monospace;
-    font-size: 0.82rem;
-    white-space: pre-wrap;
-    word-break: break-word;
-    overflow-x: auto;
-    max-height: 300px;
-    overflow-y: auto;
   }
 
   .placeholder {

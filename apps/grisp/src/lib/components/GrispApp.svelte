@@ -1,6 +1,6 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
-  import { wsEndpoint, kgEndpoint } from '../constants.js';
+  import { wsEndpoint, kgEndpoint, COPYRIGHT } from '../constants.js';
   import StepCard from './StepCard.svelte';
   import OutputCard from './OutputCard.svelte';
   import SparqlBlock from './SparqlBlock.svelte';
@@ -12,6 +12,7 @@
   let cancelling = false;
   let socket;
   let kg = '';
+  let textareaEl;
 
   // generation state
   let steps = [];
@@ -24,9 +25,43 @@
   $: hasSteps = steps.length > 0;
   $: hasOutput = output !== null;
   $: hasResult = hasSteps || hasOutput || error !== null;
+  $: question, autoResize();
+
+  // Group selection steps by skeleton for display
+  $: groupedSteps = (() => {
+    const result = [];
+    const skeletonsStep = steps.find(s => s.type === 'skeletons');
+    if (skeletonsStep) {
+      result.push(skeletonsStep);
+    }
+
+    // Group selections by skeleton number
+    const selectionsByskeleton = new Map();
+    steps.filter(s => s.type === 'selection').forEach(step => {
+      const skeletonId = step.skeleton;
+      if (!selectionsByskeleton.has(skeletonId)) {
+        selectionsByskeleton.set(skeletonId, []);
+      }
+      selectionsByskeleton.get(skeletonId).push(step.selection);
+    });
+
+    // Add grouped selections with skeleton code
+    for (const [skeletonId, selections] of selectionsByskeleton.entries()) {
+      const skeletonCode = skeletonsStep?.skeletons?.[skeletonId] ?? null;
+      result.push({
+        type: 'skeleton-selections',
+        skeleton: skeletonId,
+        selections,
+        skeletonCode
+      });
+    }
+
+    return result;
+  })();
 
   onMount(async () => {
     await initialize();
+    autoResize();
   });
 
   onDestroy(() => {
@@ -187,65 +222,101 @@
       handleSubmit();
     }
   }
+
+  function autoResize() {
+    if (!textareaEl) return;
+    textareaEl.style.height = 'auto';
+    const newHeight = Math.min(textareaEl.scrollHeight, 200); // max 200px
+    textareaEl.style.height = `${newHeight}px`;
+  }
 </script>
 
 <section class="app-shell">
-  <header class="header">
-    <h1 class="title">GRISP</h1>
-    <p class="subtitle">
-      Grammar-Regulated Interactive SPARQL generation with Phrase alternatives
-      {#if kg}
-        <span class="kg-badge">{kg}</span>
-      {/if}
-    </p>
-  </header>
+  <footer class="footer">
+    <p>&copy; {new Date().getFullYear()} {COPYRIGHT}</p>
+  </footer>
 
-  <main class="main-content" class:main-content--centered={!hasResult}>
+  <div class="shell-content" class:shell-content--empty={!hasResult}>
+    <header class="header">
+      <div class="title-stack">
+        <h1>GRISP</h1>
+        <p>Guided Recurrent IRI Selection over SPARQL Skeletons</p>
+      </div>
+    </header>
+
+    <main class="main-content" class:main-content--centered={!hasResult}>
     <!-- Input -->
-    <div class="input-section">
+    <div class="input-section" class:input-section--running={running}>
       <div class="input-row">
-        <input
+        <textarea
           class="question-input"
-          type="text"
-          placeholder={connected ? 'Ask a question...' : 'Connecting...'}
+          placeholder={connected ? (kg ? `Ask a question over ${kg}...` : 'Ask a question...') : 'Connecting...'}
           bind:value={question}
+          bind:this={textareaEl}
           on:keydown={handleKeydown}
+          on:input={autoResize}
+          rows="1"
           disabled={!connected || running}
-        />
-        <div class="button-group">
+        ></textarea>
+        <div class="input-actions">
+          <button
+            type="button"
+            class="icon-button icon-button--primary"
+            on:click={handleSubmit}
+            disabled={!canSubmit}
+            aria-label="Run"
+            title="Run"
+          >
+            <span class="paperplane-icon" aria-hidden="true">➤</span>
+          </button>
           {#if running}
             <button
-              class="btn btn--cancel"
+              type="button"
+              class="icon-button icon-button--danger"
+              class:icon-button--cancelling={cancelling}
               on:click={handleCancel}
               disabled={cancelling}
+              aria-label={cancelling ? 'Cancellation in progress' : 'Cancel'}
+              title={cancelling ? 'Cancellation in progress' : 'Cancel'}
             >
-              {cancelling ? 'Cancelling...' : 'Cancel'}
-            </button>
-          {:else}
-            <button
-              class="btn btn--submit"
-              on:click={handleSubmit}
-              disabled={!canSubmit}
-            >
-              Generate
+              {#if cancelling}
+                <span class="cancel-spinner" aria-hidden="true"></span>
+              {:else}
+                <span class="cancel-icon" aria-hidden="true">✖</span>
+              {/if}
             </button>
           {/if}
           {#if hasResult && !running}
-            <button class="btn btn--reset" on:click={handleReset}>
-              Clear
+            <button
+              type="button"
+              class="icon-button icon-button--clear"
+              on:click={handleReset}
+              disabled={false}
+              aria-label="Clear"
+              title="Clear"
+            >
+              <span aria-hidden="true">↺</span>
             </button>
           {/if}
         </div>
       </div>
 
       {#if statusMessage}
-        <p class="status-message">{statusMessage}</p>
-      {/if}
-
-      {#if connectionStatus === 'disconnected' || connectionStatus === 'error'}
-        <button class="btn btn--reload" on:click={() => window.location.reload()}>
-          Reload
-        </button>
+        <div class="alert-box" role="alert">
+          <div class="alert-text">
+            <strong>Connection issue</strong>
+            <span>{statusMessage}</span>
+          </div>
+          {#if connectionStatus === 'disconnected' || connectionStatus === 'error'}
+            <button
+              type="button"
+              class="alert-button"
+              on:click={() => window.location.reload()}
+            >
+              Reload page
+            </button>
+          {/if}
+        </div>
       {/if}
     </div>
 
@@ -257,10 +328,13 @@
           <span class="progress-text">
             {#if steps.length === 0}
               Generating skeletons...
-            {:else if steps.some(s => s.type === 'skeletons') && !steps.some(s => s.type === 'selection')}
-              Starting selection...
             {:else}
-              Selecting IRIs (skeleton {(steps.filter(s => s.type === 'selection').slice(-1)[0]?.skeleton ?? 0) + 1})...
+              {@const latestSelection = steps.filter(s => s.type === 'selection').slice(-1)[0]}
+              {#if latestSelection}
+                Selecting knowledge graph items for skeleton {latestSelection.skeleton + 1}...
+              {:else}
+                Starting selection...
+              {/if}
             {/if}
           </span>
         </div>
@@ -272,24 +346,32 @@
       <OutputCard {output} />
     {/if}
 
-    <!-- Intermediate steps -->
-    {#if hasSteps}
-      <details class="steps-section" open={!hasOutput}>
-        <summary class="steps-summary">
-          Intermediate Steps ({steps.length})
-        </summary>
-        <div class="steps-list">
-          {#each steps as step, i (i)}
-            <StepCard {step} index={i} />
-          {/each}
-        </div>
-      </details>
+    <!-- Intermediate steps - only show after completion -->
+    {#if hasSteps && !running}
+      {#each groupedSteps as step, i (i)}
+        {#if step.type === 'skeletons'}
+          <details class="steps-section" open={false}>
+            <summary class="steps-summary">
+              Generated Skeletons ({step.skeletons?.length ?? 0})
+            </summary>
+            <div class="steps-list">
+              <StepCard {step} index={i} />
+            </div>
+          </details>
+        {:else if step.type === 'skeleton-selections'}
+          <details class="steps-section" open={false}>
+            <summary class="steps-summary">
+              Skeleton #{step.skeleton + 1} - Selection
+            </summary>
+            <div class="steps-list">
+              <StepCard {step} index={i} />
+            </div>
+          </details>
+        {/if}
+      {/each}
     {/if}
-  </main>
-
-  <footer class="footer">
-    <p>&copy; {new Date().getFullYear()} University of Freiburg</p>
-  </footer>
+    </main>
+  </div>
 </section>
 
 <style>
@@ -299,40 +381,58 @@
     min-height: 100vh;
     padding: 12px 12px 0;
     margin: 0 auto;
-    width: min(100%, 800px);
+    width: min(100%, 1040px);
     gap: var(--spacing-lg);
   }
 
-  .header {
+  .footer {
     text-align: center;
-    padding: var(--spacing-lg) 0 0;
-  }
-
-  .title {
-    margin: 0;
-    font-size: 2rem;
-    font-weight: 700;
-    color: var(--color-accent-dark);
-    letter-spacing: -0.02em;
-  }
-
-  .subtitle {
-    margin: var(--spacing-xs) 0 0;
+    padding: 0.25rem 0;
     color: var(--text-subtle);
-    font-size: 0.9rem;
+    font-size: 0.75rem;
+    line-height: 1.3;
   }
 
-  .kg-badge {
-    display: inline-flex;
+  .footer p {
+    margin: 0;
+  }
+
+  .shell-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg);
+  }
+
+  .shell-content--empty {
+    justify-content: center;
     align-items: center;
-    padding: 0.1rem 0.5rem;
-    background: var(--color-accent-light);
-    border: 1px solid var(--color-accent-border);
-    border-radius: 999px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--color-accent);
-    margin-left: var(--spacing-xs);
+  }
+
+  .header {
+    display: flex;
+    justify-content: center;
+    text-align: center;
+    padding: var(--spacing-lg) 0 var(--spacing-md);
+  }
+
+  .title-stack {
+    display: grid;
+    gap: var(--spacing-sm);
+  }
+
+  .title-stack h1 {
+    font-size: clamp(2.25rem, 3.5vw, 3rem);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-uni-blue);
+    margin: 0;
+  }
+
+  .title-stack p {
+    margin: 0;
+    color: var(--text-subtle);
+    font-size: 1rem;
   }
 
   .main-content {
@@ -340,16 +440,69 @@
     display: flex;
     flex-direction: column;
     gap: var(--spacing-lg);
+    padding-bottom: var(--spacing-lg);
   }
 
   .main-content--centered {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: stretch;
     justify-content: center;
+    flex-direction: column;
+    gap: var(--spacing-lg);
+    width: 100%;
+  }
+
+  .main-content--centered .input-section {
+    width: 100%;
+    max-width: 100%;
   }
 
   .input-section {
     display: flex;
     flex-direction: column;
     gap: var(--spacing-sm);
+    background: var(--surface-base);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-lg);
+    box-shadow: var(--shadow-sm);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .input-section::after {
+    content: '';
+    position: absolute;
+    top: -1px;
+    left: -1px;
+    right: -1px;
+    height: 3px;
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+    background: linear-gradient(
+      90deg,
+      rgba(52, 74, 154, 0) 0%,
+      rgba(52, 74, 154, 0.9) 50%,
+      rgba(52, 74, 154, 0) 100%
+    );
+    background-size: 200% 100%;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+  }
+
+  .input-section.input-section--running::after {
+    opacity: 1;
+    animation: progress-bar 1.2s linear infinite;
+  }
+
+  @keyframes progress-bar {
+    from {
+      background-position: 0% 0;
+    }
+    to {
+      background-position: 200% 0;
+    }
   }
 
   .input-row {
@@ -360,20 +513,24 @@
 
   .question-input {
     flex: 1;
-    padding: 0.6rem 0.85rem;
-    border: 1px solid var(--color-accent-border);
-    border-radius: var(--radius-md);
+    resize: none;
+    min-height: 2.5rem;
+    max-height: 200px;
+    padding: var(--spacing-sm) var(--spacing-md);
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    border-radius: var(--radius-sm);
     font-size: 0.95rem;
     font-family: inherit;
-    background: var(--surface-base);
+    background: #fff;
     color: var(--text-primary);
     outline: none;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    caret-color: var(--color-uni-blue);
+    line-height: 1.4;
+    overflow-y: auto;
   }
 
   .question-input:focus {
-    border-color: var(--color-accent);
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    outline: none;
   }
 
   .question-input:disabled {
@@ -381,69 +538,157 @@
     cursor: not-allowed;
   }
 
-  .button-group {
-    display: flex;
+  .input-actions {
+    display: inline-flex;
+    align-items: center;
     gap: var(--spacing-xs);
   }
 
-  .btn {
-    padding: 0.55rem 1rem;
-    border: none;
-    border-radius: var(--radius-md);
-    font-size: 0.9rem;
-    font-weight: 600;
+  .icon-button {
+    width: 2.1rem;
+    height: 2.1rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid transparent;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
     cursor: pointer;
-    transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
-    white-space: nowrap;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    padding: 0;
   }
 
-  .btn:disabled {
+  .icon-button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
     transform: none;
+    box-shadow: none;
   }
 
-  .btn:not(:disabled):hover {
+  .icon-button--cancelling:disabled {
+    opacity: 1;
+    cursor: wait;
+  }
+
+  .icon-button--danger {
+    background: var(--color-uni-red);
+    color: #fff;
+    box-shadow: 0 4px 8px rgba(193, 0, 42, 0.18);
+  }
+
+  .icon-button--danger.icon-button--cancelling {
+    background: rgba(193, 0, 42, 0.15);
+    color: var(--color-uni-red);
+    border: 1px solid rgba(193, 0, 42, 0.25);
+    box-shadow: none;
+  }
+
+  .icon-button--danger.icon-button--cancelling .cancel-icon {
+    display: none;
+  }
+
+  .icon-button--danger.icon-button--cancelling .cancel-spinner {
+    display: inline-block;
+  }
+
+  .icon-button--primary {
+    background: var(--color-uni-blue);
+    color: #fff;
+    box-shadow: 0 4px 8px rgba(52, 74, 154, 0.18);
+  }
+
+  .icon-button--primary:disabled {
+    background: rgba(52, 74, 154, 0.35);
+    color: rgba(255, 255, 255, 0.8);
+    box-shadow: none;
+  }
+
+  .icon-button--clear {
+    background: rgba(52, 74, 154, 0.12);
+    color: var(--color-uni-blue);
+    border: 1px solid rgba(52, 74, 154, 0.18);
+    box-shadow: 0 4px 8px rgba(52, 74, 154, 0.16);
+  }
+
+  .icon-button:not(:disabled):hover {
     transform: translateY(-1px);
   }
 
-  .btn--submit {
-    background: var(--color-accent);
-    color: #fff;
+  .cancel-spinner {
+    width: 1.05rem;
+    height: 1.05rem;
+    border-radius: 50%;
+    border: 2px solid rgba(193, 0, 42, 0.28);
+    border-top-color: var(--color-uni-red);
+    animation: cancel-spin 0.7s linear infinite;
   }
 
-  .btn--submit:not(:disabled):hover {
-    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+  @keyframes cancel-spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
   }
 
-  .btn--cancel {
-    background: #ef4444;
-    color: #fff;
+  .paperplane-icon {
+    font-size: 0.95rem;
+    transform: translateY(-1px);
   }
 
-  .btn--reset {
-    background: rgba(0, 0, 0, 0.06);
-    color: var(--text-subtle);
-    border: 1px solid var(--border-default);
+  .alert-box {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-sm);
+    align-items: center;
+    justify-content: space-between;
+    border: 1px solid rgba(193, 0, 42, 0.25);
+    background: rgba(193, 0, 42, 0.08);
+    color: var(--color-uni-red);
+    border-radius: var(--radius-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
   }
 
-  .btn--reload {
-    align-self: flex-start;
-    background: var(--color-accent-light);
-    color: var(--color-accent);
-    border: 1px solid var(--color-accent-border);
+  .alert-text {
+    display: grid;
+    gap: 2px;
   }
 
-  .status-message {
-    margin: 0;
+  .alert-text strong {
+    font-size: 0.95rem;
+  }
+
+  .alert-text span {
     font-size: 0.85rem;
-    color: #ef4444;
+    color: var(--text-primary);
+  }
+
+  .alert-button {
+    padding: 0.4rem 1rem;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--color-uni-blue);
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    flex-shrink: 0;
+  }
+
+  .alert-button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 14px rgba(52, 74, 154, 0.2);
+  }
+
+  .alert-button:focus-visible {
+    outline: 2px solid rgba(52, 74, 154, 0.4);
+    outline-offset: 2px;
   }
 
   .progress-section {
     display: flex;
     justify-content: center;
-    padding: var(--spacing-lg);
   }
 
   .progress-bar {
@@ -451,10 +696,10 @@
     align-items: center;
     gap: var(--spacing-sm);
     padding: 0.5rem 1rem;
-    background: var(--color-accent-light);
-    border: 1px solid var(--color-accent-border);
-    border-radius: var(--radius-md);
-    color: var(--color-accent);
+    background: rgba(52, 74, 154, 0.08);
+    border: 1px solid rgba(52, 74, 154, 0.25);
+    border-radius: var(--radius-sm);
+    color: var(--color-uni-blue);
     font-weight: 600;
     font-size: 0.9rem;
   }
@@ -466,9 +711,9 @@
   .spinner {
     width: 1rem;
     height: 1rem;
-    border-radius: 999px;
-    border: 2.5px solid rgba(37, 99, 235, 0.25);
-    border-top-color: var(--color-accent);
+    border-radius: 50%;
+    border: 2.5px solid rgba(52, 74, 154, 0.25);
+    border-top-color: var(--color-uni-blue);
     animation: spin 0.9s linear infinite;
     flex-shrink: 0;
   }
@@ -483,6 +728,7 @@
     border-radius: var(--radius-md);
     background: var(--surface-base);
     overflow: hidden;
+    box-shadow: var(--shadow-sm);
   }
 
   .steps-summary {
@@ -492,10 +738,11 @@
     color: var(--text-subtle);
     cursor: pointer;
     user-select: none;
+    transition: background 0.15s ease;
   }
 
   .steps-summary:hover {
-    background: rgba(0, 0, 0, 0.02);
+    background: rgba(52, 74, 154, 0.04);
   }
 
   .steps-list {
@@ -504,14 +751,4 @@
     background: var(--border-default);
   }
 
-  .footer {
-    text-align: center;
-    padding: var(--spacing-sm) 0;
-    color: var(--text-subtle);
-    font-size: 0.75rem;
-  }
-
-  .footer p {
-    margin: 0;
-  }
 </style>
