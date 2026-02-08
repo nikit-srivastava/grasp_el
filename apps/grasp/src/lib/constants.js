@@ -22,7 +22,22 @@ export const BRAND_LINKS = Object.freeze({
   data: 'https://ad-publications.cs.uni-freiburg.de/grasp/'
 });
 
-export const getApiBase = () => `${base}/api`;
+/* global __API_BASE__ */
+
+/**
+ * API base URL, set at build time via the API_BASE env var.
+ *
+ *   API_BASE=/api                          (default – same origin, reverse proxy)
+ *   API_BASE=http://localhost:6789         (direct, dev)
+ *   API_BASE=https://example.com/my/api    (custom prefix)
+ *
+ * Relative paths are prefixed with BASE_PATH, so BASE_PATH=/v1 + API_BASE=/api
+ * results in /v1/api. Absolute URLs are used as-is.
+ */
+const RAW_API_BASE = __API_BASE__.replace(/\/+$/, '');
+const API_BASE = /^https?:\/\//.test(RAW_API_BASE) ? RAW_API_BASE : `${base}${RAW_API_BASE}`;
+
+export const getApiBase = () => API_BASE;
 
 export const TASKS = Object.freeze([
   {
@@ -54,8 +69,11 @@ export const QLEVER_HOSTS = Object.freeze([
 export const endpointFor = (path) => `${getApiBase()}${path}`;
 
 export const wsEndpoint = () => {
+  if (/^https?:\/\//.test(API_BASE)) {
+    return API_BASE.replace(/^http/, 'ws') + '/live';
+  }
   const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${wsProtocol}//${window.location.host}${getApiBase()}/live`;
+  return `${wsProtocol}//${window.location.host}${API_BASE}/live`;
 };
 
 export const configEndpoint = () => endpointFor('/config');

@@ -1,0 +1,61 @@
+# GRISP Website (SvelteKit)
+
+SvelteKit web interface for the GRISP (Grammar-Regulated Interactive SPARQL generation with Phrase alternatives) baseline. Provides a simple input field, progress indicator, output card, and expandable intermediate steps (skeletons, selection events).
+
+## Requirements
+
+- Node.js 20.19+ (or 22.12+/24+) — the tooling enforces this.
+  We recommend using `nvm` to manage versions.
+- npm (ships with Node).
+
+Install project dependencies once:
+
+```bash
+cd apps/grisp
+npm install
+```
+
+## Development
+
+```bash
+API_BASE=http://localhost:6790 npm run dev
+```
+
+The dev server runs at http://localhost:5173 with hot module replacement. `API_BASE` points the website at a running GRISP server.
+
+## Building for production
+
+```bash
+npm run build
+```
+
+With the static adapter, the production build is emitted to `build/`. You can preview the output locally with:
+
+```bash
+npm run preview
+```
+
+### Build-time environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `BASE_PATH` | `""` | SvelteKit path prefix (e.g. `/grisp`) for when the site is hosted under a subpath. |
+| `API_BASE` | `/api` | API base URL. Relative paths are prefixed with `BASE_PATH` (e.g. `BASE_PATH=/v1` + `API_BASE=/api` → `/v1/api`). Set to an absolute URL (e.g. `http://localhost:6790`) to talk directly to a GRISP server. |
+
+## Docker
+
+```bash
+docker build -t grisp-website .
+docker run -p 8080:80 grisp-website
+```
+
+Override build args as needed:
+
+```bash
+docker build -t grisp-website \
+  --build-arg BASE_PATH=/grisp \
+  --build-arg API_BASE=/api \
+  .
+```
+
+The multi-stage Dockerfile compiles the static build using Node 22 Alpine, then serves the exported site via `nginx:alpine-slim`.
