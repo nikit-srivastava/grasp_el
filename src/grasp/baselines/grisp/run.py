@@ -533,6 +533,7 @@ def select_iris_left_to_right(
 
         yield {
             "type": "alternatives",
+            "index": skeleton.replaced,
             "prefix": prefix,
             "sparql": sparql,
             "query": query,
