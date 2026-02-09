@@ -263,6 +263,7 @@
     <p>&copy; {new Date().getFullYear()} {COPYRIGHT}</p>
     <nav class="footer-links">
       <a href="/evaluate">Evaluation</a>
+      <a href="/data">Data</a>
     </nav>
   </footer>
 
