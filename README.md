@@ -81,7 +81,7 @@ Follow these steps to run GRASP. If you want to use Docker, see section
 > You might have to install the CPU version of Faiss, since
 > the GPU version leads to issues on some systems.
 
-3. Install GRASP
+1. Install GRASP
 
 ```bash
 # Via git (recommended, up-to-date version)
@@ -92,13 +92,13 @@ pip install git+https://github.com/ad-freiburg/grasp.git@main
 pip install grasp-rdf
 ```
 
-4. Set the `GRASP_INDEX_DIR` env variable. Defaults to `$HOME/.grasp/index` if not
+1. Set the `GRASP_INDEX_DIR` env variable. Defaults to `$HOME/.grasp/index` if not
 set. We set it to `$PWD/data/kg-index`, but you can choose any directory you like.
 
 > We recommend to set it with conda, such that it is set automatically when you activate
 > the conda environment: `conda env config vars set GRASP_INDEX_DIR=/path/to/dir`
 
-5. Get indices for the knowledge graphs you want to use. All indices are available
+1. Get indices for the knowledge graphs you want to use. All indices are available
 [publicly](https://ad-publications.cs.uni-freiburg.de/grasp/kg-index).
 For example, to get the indices for Wikidata:
 
@@ -125,7 +125,7 @@ wget https://ad-publications.cs.uni-freiburg.de/grasp/benchmark/wikidata/qald10/
 tar -xzf train.example-index.tar.gz
 ```
 
-6. Run GRASP:
+1. Run GRASP:
 
 ```bash
 # Note, that if you e.g. run OpenAI models, you also need to set the
@@ -457,13 +457,13 @@ GRASP supports both commercial and open-source models.
 - `hosted_vllm/Qwen/Qwen2.5-72B-Instruct` (and other sizes)
 - `hosted_vllm/Qwen/Qwen3-32B` (and other sizes)
 
-4. Set model_endpoint in the config file or with `MODEL_ENDPOINT` env variable
+1. Set model_endpoint in the config file or with `MODEL_ENDPOINT` env variable
 to your vLLM server endpoint, by default this will be `http://localhost:8000/v1`
 
 #### Run Qwen2.5
 
 Change 72B to 7B, 14B, or 32B to run other sizes. Adapt the tensor parallel size
-to your GPU setup, we used two H100 GPUs for Qwen2.7 72B.
+to your GPU setup, we used two H100 GPUs for Qwen2.5 72B.
 
 ```bash
 vllm serve Qwen/Qwen2.5-72B-Instruct --tool-call-parser hermes \
