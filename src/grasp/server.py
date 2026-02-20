@@ -15,20 +15,17 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi import Request as HTTPRequest
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, conlist
 from universal_ml_utils.io import dump_json, load_json
 from universal_ml_utils.logging import get_logger
 from universal_ml_utils.ops import consume_generator, partition_by
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from grasp.configs import ServerConfig
 from grasp.core import generate, load_notes, setup
 from grasp.model import Message
 from grasp.tasks import Task
 from grasp.tasks.examples import load_example_indices
-
-# keep track of connections and limit to 10 concurrent connections
-active_connections = 0
 
 
 class Past(BaseModel):
@@ -76,10 +73,12 @@ class RateLimiter:
 
 def serve(config: ServerConfig, log_level: int | str | None = None) -> None:
     # create a fast api websocket server to serve the generate_sparql function
-
     app = FastAPI()
+    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
     logger = get_logger("GRASP SERVER", log_level)
 
+    # keep track of connections and limit to 10 concurrent connections
+    active_connections = 0
     rate_limiter: RateLimiter | None = None
     if config.rate_limit is not None:
         rate_limiter = RateLimiter(config.rate_limit, config.rate_limit_window)
@@ -199,26 +198,27 @@ def serve(config: ServerConfig, log_level: int | str | None = None) -> None:
 
     @app.post("/run")
     async def _run(request: Request, http_request: HTTPRequest):
-        global active_connections
+        nonlocal active_connections
+        nonlocal rate_limiter
 
         client_ip = http_request.client.host if http_request.client else "unknown"
+        prefix = f"[{client_ip}] [/run]"
 
         if rate_limiter is not None:
             retry_after = rate_limiter.check(client_ip)
             if retry_after is not None:
                 logger.warning(
-                    f"Rate limit exceeded for {client_ip}, "
-                    f"retry after {retry_after:.0f}s"
+                    f"{prefix} Rate limit exceeded, retry after {retry_after:.0f}s"
                 )
-                return JSONResponse(
+                raise HTTPException(
                     status_code=429,
-                    content={"detail": "Too many requests, try again later"},
+                    detail="Too many requests, try again later",
                     headers={"Retry-After": str(int(retry_after))},
                 )
 
         if active_connections >= config.max_connections:
             logger.warning(
-                f"[{client_ip}] HTTP run request refused: "
+                f"{prefix} Request refused: "
                 f"maximum of {config.max_connections:,} active connections reached"
             )
             raise HTTPException(
@@ -227,13 +227,13 @@ def serve(config: ServerConfig, log_level: int | str | None = None) -> None:
             )
 
         active_connections += 1
-        logger.info(f"[{client_ip}] HTTP run request started ({active_connections=:,})")
+        logger.info(f"{prefix} Request started ({active_connections=:,})")
 
         try:
             sel = request.knowledge_graphs
             if not sel or not all(kg in kgs for kg in sel):
                 logger.error(
-                    f"[{client_ip}] Unsupported knowledge graph selection:\n"
+                    f"{prefix} Unsupported knowledge graph selection:\n"
                     f"{request.model_dump_json(indent=2)}"
                 )
                 raise HTTPException(
@@ -274,7 +274,7 @@ def serve(config: ServerConfig, log_level: int | str | None = None) -> None:
                 )
             except asyncio.TimeoutError:
                 logger.warning(
-                    f"[{client_ip}] Generation hit time limit of {config.max_generation_time:,} seconds"
+                    f"{prefix} Generation hit time limit of {config.max_generation_time:,} seconds"
                 )
                 raise HTTPException(
                     status_code=504,
@@ -285,9 +285,7 @@ def serve(config: ServerConfig, log_level: int | str | None = None) -> None:
             except HTTPException as e:
                 raise e
             except Exception as exc:
-                logger.error(
-                    f"[{client_ip}] Unexpected error with HTTP run request:\n{exc}"
-                )
+                logger.error(f"{prefix} Unexpected error:\n{exc}")
                 raise HTTPException(
                     status_code=500,
                     detail=f"Failed to handle request:\n{exc}",
@@ -300,41 +298,29 @@ def serve(config: ServerConfig, log_level: int | str | None = None) -> None:
 
         finally:
             active_connections -= 1
-            logger.info(
-                f"[{client_ip}] HTTP run request finished ({active_connections=:,})"
-            )
+            logger.info(f"{prefix} Request finished ({active_connections=:,})")
 
     @app.websocket("/live")
     async def _live(websocket: WebSocket):
-        global active_connections
+        nonlocal active_connections
+        nonlocal rate_limiter
+
         assert websocket.client is not None
         client_ip = websocket.client.host
+        prefix = f"[{client_ip}] [/live]"
         await websocket.accept()
-
-        # Check rate limit
-        if rate_limiter is not None:
-            retry_after = rate_limiter.check(client_ip)
-            if retry_after is not None:
-                logger.warning(
-                    f"[{client_ip}] Rate limit exceeded, retry after {retry_after:.0f}s"
-                )
-                await websocket.close(
-                    code=1013,
-                    reason=f"Too many requests, retry after {ceil(retry_after)}s",
-                )
-                return
 
         # Check if we've reached the maximum number of connections
         if active_connections >= config.max_connections:
             logger.warning(
-                f"[{client_ip}] Connection immediately closed: "
+                f"{prefix} Connection refused: "
                 f"maximum of {config.max_connections:,} active connections reached"
             )
             await websocket.close(code=1013, reason="Server too busy, try again later")
             return
 
         active_connections += 1
-        logger.info(f"[{client_ip}] Connected ({active_connections=:,})")
+        logger.info(f"{prefix} Connected ({active_connections=:,})")
         last_active = time.monotonic()
 
         async def idle_checker():
@@ -346,7 +332,7 @@ def serve(config: ServerConfig, log_level: int | str | None = None) -> None:
                     continue
 
                 msg = f"Connection closed due to inactivity after {config.max_idle_time:,} seconds"
-                logger.info(f"[{client_ip}] {msg}")
+                logger.info(f"{prefix} {msg}")
                 await websocket.close(code=1013, reason=msg)  # Try Again Later
                 break
 
@@ -360,15 +346,23 @@ def serve(config: ServerConfig, log_level: int | str | None = None) -> None:
                     request = Request(**data)
                 except Exception:
                     logger.error(
-                        f"[{client_ip}] Invalid request:\n{json.dumps(data, indent=2)}"
+                        f"{prefix} Invalid request:\n{json.dumps(data, indent=2)}"
                     )
                     await websocket.send_json({"error": "Invalid request format"})
                     continue
 
+                if rate_limiter is not None:
+                    retry_after = rate_limiter.check(client_ip)
+                    if retry_after is not None:
+                        msg = f"Request limit exceeded, retry after {ceil(retry_after):,}s"
+                        logger.warning(f"{prefix} {msg}")
+                        await websocket.close(code=1013, reason=msg)
+                        break
+
                 sel = request.knowledge_graphs
                 if not sel or not all(kg in kgs for kg in sel):
                     logger.error(
-                        f"[{client_ip}] Unsupported knowledge graph selection:\n"
+                        f"{prefix} Unsupported knowledge graph selection:\n"
                         f"{request.model_dump_json(indent=2)}"
                     )
                     await websocket.send_json(
@@ -377,8 +371,7 @@ def serve(config: ServerConfig, log_level: int | str | None = None) -> None:
                     continue
 
                 logger.info(
-                    f"[{client_ip}] Processing request:\n"
-                    f"{request.model_dump_json(indent=2)}"
+                    f"{prefix} Processing request:\n{request.model_dump_json(indent=2)}"
                 )
 
                 sel_managers, _ = partition_by(managers, lambda m: m.kg in sel)
@@ -443,7 +436,7 @@ def serve(config: ServerConfig, log_level: int | str | None = None) -> None:
                             current_time = time.monotonic()
                             if current_time - start_time > config.max_generation_time:
                                 msg = f"Generation hit time limit of {config.max_generation_time:,} seconds"
-                                logger.warning(f"[{client_ip}] {msg}")
+                                logger.warning(f"{prefix} {msg}")
                                 stop_event.set()
                                 await websocket.send_json({"error": msg})
                                 break
@@ -457,7 +450,7 @@ def serve(config: ServerConfig, log_level: int | str | None = None) -> None:
                             last_active = time.monotonic()
 
                             if data.get("cancel", False):
-                                logger.info(f"[{client_ip}] Generation cancelled")
+                                logger.info(f"{prefix} Generation cancelled")
                                 stop_event.set()
                                 await websocket.send_json({"cancelled": True})
                                 break
@@ -466,7 +459,7 @@ def serve(config: ServerConfig, log_level: int | str | None = None) -> None:
                             exc = payload
                             stop_event.set()
                             logger.error(
-                                f"[{client_ip}] Unexpected error while generating:\n{exc}"
+                                f"{prefix} Unexpected error while generating:\n{exc}"
                             )
                             await websocket.send_json(
                                 {"error": f"Failed to handle request:\n{exc}"}
@@ -481,18 +474,18 @@ def serve(config: ServerConfig, log_level: int | str | None = None) -> None:
                     try:
                         await producer
                     except Exception as exc:
-                        logger.error(f"[{client_ip}] Generator worker failed:\n{exc}")
+                        logger.error(f"{prefix} Generator worker failed:\n{exc}")
 
         except WebSocketDisconnect:
             pass
 
         except Exception as e:
-            logger.error(f"[{client_ip}] Unexpected error:\n{e}")
+            logger.error(f"{prefix} Unexpected error:\n{e}")
             await websocket.send_json({"error": f"Failed to handle request:\n{e}"})
 
         finally:
             idle_task.cancel()
             active_connections -= 1
-            logger.info(f"[{client_ip}] Disconnected ({active_connections=:,})")
+            logger.info(f"{prefix} Disconnected ({active_connections=:,})")
 
     uvicorn.run(app, host="0.0.0.0", port=config.port)
