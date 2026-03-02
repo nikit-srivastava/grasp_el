@@ -27,7 +27,7 @@ dependencies = [
   "scipy>=1.15.0",
   "universal-ml-utils>=0.1.5",
   "grammar-utils>=0.1.4",
-  "search-rdf>=0.2.0",
+  "search-rdf>=0.2.1",
   # server
   "fastapi>=0.115.0",
   "uvicorn>=0.30.0",
