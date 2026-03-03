@@ -20,7 +20,7 @@ from grasp.manager import KgManager, load_kg_manager
 from grasp.sparql.item import Item, extract_sparql_items
 from grasp.sparql.types import Alternative, Selection
 from grasp.sparql.utils import find_all
-from grasp.tasks import SparqlQaSample
+from grasp.tasks.sparql_qa.examples import SparqlQaSample
 from grasp.utils import format_list, get_available_knowledge_graphs
 
 BOI = "<iri>"
