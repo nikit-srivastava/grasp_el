@@ -114,6 +114,32 @@ python -m grasp.baselines.grisp.run \
   --output-file data/grisp/runs/my-wikidata-wwq-model/predictions.jsonl
 ```
 
+## Serve a GRISP model
+
+```bash
+python -m grasp.baselines.grisp.server configs/grisp/serve.yaml
+```
+
+The server runs on port 6790 by default and exposes the following HTTP endpoints.
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/knowledge_graphs` | GET | Returns list with the configured KG name |
+| `/config` | GET | Returns the server configuration |
+| `/run` | POST | Run GRISP on a single question |
+
+#### `POST /run`
+
+**Request body:**
+
+```json
+{"question": "Where was Angela Merkel born?"}
+```
+
+**Response:** GRISP output as a JSON object
+
+**Error codes:** `503` server busy, `504` generation timeout
+
 ## Evaluate a GRISP model
 
 The `grisp.run` command produces outputs that are compatible

@@ -218,6 +218,38 @@ grasp notes outputs configs/notes/outputs.yaml notes/
 grasp notes explore configs/notes/explore.yaml notes/
 ```
 
+### Server API
+
+When running `grasp serve`, the server exposes the following HTTP endpoints (by default on port 8000).
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/knowledge_graphs` | GET | Returns list of available KG names |
+| `/config` | GET | Returns the server configuration |
+| `/run` | POST | Run GRASP on a single input |
+
+#### `POST /run`
+
+**Request body:**
+
+```json
+{
+  "task": "sparql-qa",
+  "input": "Where was Angela Merkel born?",
+  "knowledge_graphs": ["wikidata"],
+  "past": null
+}
+```
+
+- `task`: one of `"sparql-qa"`, `"general-qa"`, `"cea"`, `"wikidata-query-logs"`
+- `input`: the task input (string for most tasks, JSON object for `"cea"`)
+- `knowledge_graphs`: list of one or more KG names available on the server
+- `past` *(optional)*: conversation history for multi-turn interactions, with fields `messages` (list of previous messages) and `known` (set of known entity/property IRIs)
+
+**Response:** GRASP output as a JSON object
+
+**Error codes:** `400` invalid KG selection, `429` rate limit exceeded, `503` server busy, `504` generation timeout
+
 ### Run GRASP with Docker
 
 Build the Docker image:
