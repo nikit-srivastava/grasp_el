@@ -105,13 +105,46 @@ python -m grasp.baselines.grisp.train \
 An exemplary run config with the most important inference options
 is provided [`here`](../../../../configs/grisp/run.yaml).
 
+### Use a pre-trained model
+
+Pre-trained GRISP models for Wikidata and Freebase are available
+[here](https://ad-publications.cs.uni-freiburg.de/grisp/). If you want to use
+them, make sure to have set up the GRASP indices for the
+corresponding knowledge graph before running the model.
+
+For example, to download and use our Wikidata WDQL model based on Qwen2.5 7B:
+
+```bash
+# Download the model
+wget https://ad-publications.cs.uni-freiburg.de/grisp/qwen-2.5-7b-instruct-lora-wikidata-wdql-both-05-02-26.tar.gz
+# Extract it
+tar -xzf qwen-2.5-7b-instruct-lora-wikidata-wdql-both-05-02-26.tar.gz
+# Run on a single question
+python -m grasp.baselines.grisp.run \
+  configs/grisp/run.yaml \
+  qwen-2.5-7b-instruct-lora-wikidata-wdql-both-05-02-26 \
+  run \
+  --input "Where was Angela Merkel born?"
+
+# Or run on a file with questions, e.g. the WWQ test set
+python -m grasp.baselines.grisp.run \
+  configs/grisp/run.yaml \
+  qwen-2.5-7b-instruct-lora-wikidata-wdql-both-05-02-26 \
+  file \
+  --input-file data/benchmark/wikidata/wwq/test.jsonl
+```
+
+### Run a custom model
+
+If you trained your own model, just use your training output directory as
+the model path.
+
 ```bash
 python -m grasp.baselines.grisp.run \
   configs/grisp/run.yaml \
-  data/grisp/runs/my-wikidata-wwq-model \ # path to the trained model
-  file \ # when evaluating on a dataset, use the file subcommand
-  --input-file data/benchmark/wikidata/wwq/test.jsonl \ # path to test data
-  --output-file data/grisp/runs/my-wikidata-wwq-model/predictions.jsonl
+  data/grisp/runs/my-wikidata-wwq-model \ # Path to your training output directory
+  file \
+  --input-file data/benchmark/wikidata/wwq/test.jsonl
 ```
 
 ## Serve a GRISP model
