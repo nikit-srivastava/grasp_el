@@ -436,31 +436,33 @@ Second, you can customize the SPARQL queries that GRASP uses to fetch additional
 information about entities and properties for enriching search results.
 For that, create a file `$GRASP_INDEX_DIR/<kg_name>/entities/info.sparql`
 for entities or `$GRASP_INDEX_DIR/<kg_name>/properties/info.sparql` for properties.
-The file should contain a SPARQL query, that returns two columns in its results:
+The file should contain a SPARQL query that returns three columns in its results:
 
-1. The IRI of the entity/property (required, must be unique)
-2. All additional information about the entity/property, separated by `;;;` (optional)
+1. `?id`: the IRI of the entity/property (required)
+2. `?value`: a single piece of additional information (e.g. a label, alias, or description)
+3. `?type`: the type of information, one of `"label"`, `"alias"`, or `"info"`
 
+The query returns one row per piece of information (not one row per entity).
 A typical SPARQL query for that looks like this:
 
 ```sparql
-SELECT
-  # unique identifier of the entity/property
-  ?id
-  # all additional information, separated by ;;;
-  (GROUP_CONCAT(DISTINCT ?info; SEPARATOR=";;;") AS ?infos)
-} WHERE {
+SELECT DISTINCT ?id ?value ?type WHERE {
   {
     VALUES ?id { {IDS} }
-    ...
+    ?id rdfs:label ?value
+    BIND("label" AS ?type)
   } UNION {
     VALUES ?id { {IDS} }
-    ...
+    ?id skos:altLabel ?value
+    BIND("alias" AS ?type)
+  } UNION {
+    VALUES ?id { {IDS} }
+    ?id rdfs:comment ?value
+    BIND("info" AS ?type)
   }
-  ...
+  FILTER(LANG(?value) = "en")
 }
-# group by the identifier to ensure uniqueness
-GROUP BY ?id
+ORDER BY ?id ?type ?value
 ```
 
 At runtime, all places where `{IDS}` appears in the query will be
