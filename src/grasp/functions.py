@@ -44,6 +44,15 @@ def kg_functions(managers: list[KgManager], fn_set: str) -> list[dict]:
     ], f"Unknown function set {fn_set}"
     kgs = [manager.kg for manager in managers]
 
+    # collect all available index names across managers
+    all_index_names: list[str] = []
+    seen = set()
+    for manager in managers:
+        for name in manager.index_names:
+            if name not in seen:
+                all_index_names.append(name)
+                seen.add(name)
+
     fns = [
         {
             "name": "execute",
@@ -256,19 +265,17 @@ search_object_of_property(kg="wikidata", property="wdt:P106", query="football")"
                 "description": """\
 Search for knowledge graph items in a context-sensitive way by specifying a constraining \
 SPARQL query together with a search query. The SPARQL query must be a SELECT query \
-with a variable ?search occurring at least once in the WHERE clause. The search is \
-then restricted to knowledge graph items that fit at the ?search positions in the SPARQL \
-query. This function uses the index type for entities of the given knowledge graph internally \
-if the ?search variable first occurs at the subject or object position, and the index type for \
-properties otherwise.
+returning a single column of IRIs. The search is then restricted to knowledge graph items \
+matching those IRIs in the specified index. The index parameter specifies which index to \
+search in ("entity", "property", or any other index name).
 
 For example, to search for Albert Einstein at the subject position in \
 Wikidata, do the following:
-search_with_filter(kg="wikidata", sparql="SELECT ?search WHERE { ?search ?p ?o }", query="albert einstein")
+search_with_filter(kg="wikidata", index="entity", sparql="SELECT DISTINCT ?s WHERE { ?s ?p ?o }", query="albert einstein")
 
 Or to search for properties of Albert Einstein related to his birth in \
 Wikidata, do the following:
-search_with_filter(kg="wikidata", sparql="SELECT ?search WHERE { wd:Q937 ?search ?o }", query="birth")""",
+search_with_filter(kg="wikidata", index="property", sparql="SELECT DISTINCT ?p WHERE { wd:Q937 ?p ?o }", query="birth")""",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -276,6 +283,11 @@ search_with_filter(kg="wikidata", sparql="SELECT ?search WHERE { wd:Q937 ?search
                             "type": "string",
                             "enum": kgs,
                             "description": "The knowledge graph to search",
+                        },
+                        "index": {
+                            "type": "string",
+                            "enum": all_index_names,
+                            "description": "The index to search in",
                         },
                         "sparql": {
                             "type": "string",
@@ -286,7 +298,7 @@ search_with_filter(kg="wikidata", sparql="SELECT ?search WHERE { wd:Q937 ?search
                             "description": "The search query",
                         },
                     },
-                    "required": ["kg", "sparql", "query"],
+                    "required": ["kg", "index", "sparql", "query"],
                     "additionalProperties": False,
                 },
                 "strict": True,
@@ -300,16 +312,16 @@ search_with_filter(kg="wikidata", sparql="SELECT ?search WHERE { wd:Q937 ?search
                 "description": """\
 Search for knowledge graph items at a particular position (subject, property, or object) \
 with optional constraints. If constraints are provided, they are used to limit the search \
-space accordingly. This function uses the index type for entities of the \
-given knowledge graph internally if the position is subject or object, and the index type for properties \
-otherwise.
+space accordingly. The index parameter specifies which index to search in ("entity", \
+"property", or any other index name). For position "property", the index must be "property". \
+For positions "subject" or "object", the index can be "entity" or any sub-index name.
 
 For example, to search for the subject Albert Einstein in Wikidata, do the following:
-search_with_constraints(kg="wikidata", position="subject", query="albert einstein")
+search_with_constraints(kg="wikidata", index="entity", position="subject", query="albert einstein")
 
 Or to search for properties of Albert Einstein related to his birth in Wikidata, \
 do the following:
-search_with_constraints(kg="wikidata", position="property", query="birth", \
+search_with_constraints(kg="wikidata", index="property", position="property", query="birth", \
 constraints={"subject": "wd:Q937"})""",
                 "parameters": {
                     "type": "object",
@@ -318,6 +330,11 @@ constraints={"subject": "wd:Q937"})""",
                             "type": "string",
                             "enum": kgs,
                             "description": "The knowledge graph to search",
+                        },
+                        "index": {
+                            "type": "string",
+                            "enum": all_index_names,
+                            "description": "The index to search in",
                         },
                         "position": {
                             "type": "string",
@@ -350,7 +367,7 @@ can be null if there are none",
                             "additionalProperties": False,
                         },
                     },
-                    "required": ["kg", "position", "query", "constraints"],
+                    "required": ["kg", "index", "position", "query", "constraints"],
                     "additionalProperties": False,
                 },
                 "strict": True,
@@ -433,6 +450,7 @@ def call_function(
             {"subject": fn_args["entity"]},
             config.search_top_k,
             known,
+            index="property",
             min_score=MIN_SCORE,
         )
 
@@ -445,6 +463,7 @@ def call_function(
             {"property": fn_args["property"]},
             config.search_top_k,
             known,
+            index="entity",
             min_score=MIN_SCORE,
         )
 
@@ -457,6 +476,7 @@ def call_function(
             fn_args.get("constraints"),
             config.search_top_k,
             known,
+            index=fn_args.get("index", "entity"),
             min_score=MIN_SCORE,
         )
 
@@ -468,6 +488,7 @@ def call_function(
             fn_args["query"],
             config.search_top_k,
             known,
+            index=fn_args.get("index", "entity"),
             min_score=MIN_SCORE,
         )
 
@@ -488,20 +509,18 @@ def search_entity(
 ) -> str:
     manager, _ = find_manager(managers, kg)
 
-    alts = manager.search_entity(
+    alts = manager.search_index(
+        "entity",
         query=query,
         k=k,
         **search_kwargs,
     )
 
     # update known items
-    update_known_from_alternatives(
-        known,
-        {ObjType.ENTITY: alts},
-        manager,
-    )
+    normalizer = manager.normalizer("entity")
+    update_known_from_alts(known, alts, normalizer)
 
-    return format_alternatives({ObjType.ENTITY: alts}, k)
+    return format_index_alternatives(alts, "entity", k)
 
 
 def search_property(
@@ -514,16 +533,18 @@ def search_property(
 ) -> str:
     manager, _ = find_manager(managers, kg)
 
-    alts = manager.search_property(
+    alts = manager.search_index(
+        "property",
         query=query,
         k=k,
         **search_kwargs,
     )
 
     # update known items
-    update_known_from_alternatives(known, {ObjType.PROPERTY: alts}, manager)
+    normalizer = manager.normalizer("property")
+    update_known_from_alts(known, alts, normalizer)
 
-    return format_alternatives({ObjType.PROPERTY: alts}, k)
+    return format_index_alternatives(alts, "property", k)
 
 
 COMMON_PREFIXES = get_common_sparql_prefixes()
@@ -911,10 +932,20 @@ def search_with_constraints(
     constraints: dict[str, str | None] | None,
     k: int,
     known: set[str],
+    index: str = "entity",
     max_results: int = MAX_RESULTS,
     **search_kwargs: Any,
 ) -> str:
     manager, _ = find_manager(managers, kg)
+
+    # validate index vs position
+    if index == "property":
+        assert position == "property", (
+            "index='property' requires position='property'"
+        )
+    elif position == "property":
+        # position=property implies property index
+        index = "property"
 
     if constraints is None:
         constraints = {}
@@ -933,7 +964,7 @@ def search_with_constraints(
 object should be constrained at once."
         )
 
-    search_items = manager.get_default_search_items(Position(position))
+    identifier_map = None
     info = ""
     if num_constraints > 0:
         pos_values = {}
@@ -965,49 +996,50 @@ or in full form, like "<http://www.wikidata.org/entity/Q937>".'
 SELECT DISTINCT {select_var} WHERE {{
     {pos_values["subject"]}
     {pos_values["property"]}
-    {pos_values["object"]} 
+    {pos_values["object"]}
 }} LIMIT {MAX_RESULTS + 1}"""
 
         try:
-            search_items = manager.get_search_items(
+            identifier_map = manager.get_candidate_ids(
+                index,
                 sparql,
-                Position(position),
                 max_results,
             )
         except Exception as e:
             info = f"""\
 Falling back to an unconstrained search on the full \
-search indices due to an error:
+search index due to an error:
 {e}
 
 """
 
-    alternatives = manager.get_selection_alternatives(
+    alternatives = manager.search_index(
+        index,
         query,
-        search_items,
         k,
+        identifier_map,
         **search_kwargs,
     )
 
     # update known items
-    update_known_from_alternatives(known, alternatives, manager)
+    normalizer = manager.normalizer(index)
+    update_known_from_alts(known, alternatives, normalizer)
 
-    return info + format_alternatives(alternatives, k)
+    return info + format_index_alternatives(alternatives, index, k)
 
 
-def format_alternatives(alternatives: dict[ObjType, list[Alternative]], k: int) -> str:
-    fm = []
+def format_index_alternatives(
+    alternatives: list[Alternative],
+    index_name: str,
+    k: int,
+) -> str:
+    if not alternatives:
+        return f"No {index_name} alternatives found"
 
-    for obj_type, alts in alternatives.items():
-        if len(alts) == 0:
-            continue
-
-        top_k_string = "\n".join(
-            f"{i + 1}. {alt.get_selection_string()}" for i, alt in enumerate(alts)
-        )
-        fm.append(f"Top {k} {obj_type.value} alternatives:\n{top_k_string}")
-
-    return "\n\n".join(fm)
+    top_k_string = "\n".join(
+        f"{i + 1}. {alt.get_selection_string()}" for i, alt in enumerate(alternatives)
+    )
+    return f"Top {k} {index_name} alternatives:\n{top_k_string}"
 
 
 def search_with_filter(
@@ -1017,36 +1049,38 @@ def search_with_filter(
     query: str,
     k: int,
     known: set[str],
+    index: str = "entity",
     max_results: int = MAX_RESULTS,
     **search_kwargs: Any,
 ) -> str:
     manager, _ = find_manager(managers, kg)
 
-    try:
-        sparql, position = manager.autocomplete_sparql(sparql, limit=max_results + 1)
-    except Exception as e:
-        raise FunctionCallException(f"Invalid SPARQL query: {e}") from e
-
+    identifier_map = None
     info = ""
     try:
-        search_items = manager.get_search_items(sparql, position, max_results)
+        identifier_map = manager.get_candidate_ids(
+            index,
+            sparql,
+            max_results,
+        )
     except Exception as e:
         info = f"""\
 Falling back to an unconstrained search on the full \
-search indices due to an error:
+search index due to an error:
 {e}
 
 """
-        search_items = manager.get_default_search_items(position)
 
-    alternatives = manager.get_selection_alternatives(
+    alternatives = manager.search_index(
+        index,
         query,
-        search_items,
         k=k,
+        identifier_map=identifier_map,
         **search_kwargs,
     )
 
     # update known items
-    update_known_from_alternatives(known, alternatives, manager)
+    normalizer = manager.normalizer(index)
+    update_known_from_alts(known, alternatives, normalizer)
 
-    return info + format_alternatives(alternatives, k)
+    return info + format_index_alternatives(alternatives, index, k)

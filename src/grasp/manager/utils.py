@@ -1,18 +1,34 @@
 import os
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
-from search_rdf import Data, EmbeddingIndex, KeywordIndex, FuzzyIndex
+from search_rdf import Data, EmbeddingIndex, FuzzyIndex, KeywordIndex
+from search_rdf.model import (
+    HuggingFaceImageModel,
+    OpenClipModel,
+    SentenceTransformerModel,
+)
+from universal_ml_utils.configuration import load_config
 from universal_ml_utils.io import dump_json, load_json
 from universal_ml_utils.logging import get_logger
 
 from grasp.manager.cache import Cache
 from grasp.manager.normalizer import Normalizer, WikidataPropertyNormalizer
-from grasp.sparql.utils import find_longest_prefix, get_endpoint, load_qlever_prefixes
 from grasp.sparql.types import ObjType
+from grasp.sparql.utils import find_longest_prefix, get_endpoint, load_qlever_prefixes
 from grasp.utils import get_index_dir
 
 SearchIndex = KeywordIndex | EmbeddingIndex | FuzzyIndex
+EmbeddingModel = HuggingFaceImageModel | OpenClipModel | SentenceTransformerModel
+
+
+@dataclass
+class Index:
+    description: str
+    index: SearchIndex
+    info_sparql: str | None = None
+    cache: Cache | None = None
 
 
 def load_data(index_dir: str) -> Data:
@@ -44,7 +60,7 @@ def load_index(
         index_cls = KeywordIndex
     elif index_type == "fuzzy":
         index_cls = FuzzyIndex
-    elif index_type == "embedding":
+    elif index_type == "embedding" or index_type == "embedding-with-data":
         index_cls = EmbeddingIndex
         load_kwargs["embedding_path"] = os.path.join(index_dir, "embedding.safetensors")
     else:
@@ -77,6 +93,86 @@ def load_property_index(
 ) -> SearchIndex | None:
     index_dir = os.path.join(get_index_dir(kg), "properties")
     return load_index(index_dir, index_type)
+
+
+def load_other_indices(kg: str, indices: list[str]) -> dict[str, Index]:
+    logger = get_logger("KG OTHER INDICES LOADING")
+    base_index_dir = get_index_dir(kg)
+    config_path = os.path.join(base_index_dir, "indices.yaml")
+    if not os.path.exists(config_path):
+        logger.debug(f"No indices.yaml found at {config_path}, skipping other indices")
+        return {}
+
+    config = load_config(config_path)
+
+    others = {}
+    for cfg in config["indices"]:
+        name = cfg["name"]
+        if name not in indices:
+            continue
+
+        desc = cfg.get("description", "No description provided")
+
+        sub_index_dir = os.path.join(base_index_dir, name)
+        index = load_index(sub_index_dir, cfg["type"])
+        if index is None:
+            continue
+
+        # load optional info.sparql
+        info_sparql_path = os.path.join(sub_index_dir, "info.sparql")
+        info_sparql: str | None = None
+        if os.path.exists(info_sparql_path):
+            info_sparql = Path(info_sparql_path).read_text()
+            logger.debug(f"Loaded info.sparql for sub-index '{name}'")
+
+        # load optional cache
+        cache_dir = os.path.join(sub_index_dir, "info.cache", "db")
+        info_cache: Cache | None = None
+        try:
+            info_cache: Cache | None = Cache.load(cache_dir)
+            logger.debug(f"Loaded cache for sub-index '{name}' from {cache_dir}")
+        except Exception as e:
+            logger.warning(
+                f"Failed to load cache for sub-index '{name}' from {cache_dir}: {e}"
+            )
+
+        others[name] = Index(desc, index, info_sparql, info_cache)
+
+    return others
+
+
+def get_embedding_model_key(index: EmbeddingIndex) -> str:
+    assert index.model is not None, "Embedding index must have model metadata"
+    provider = index.provider or "sentence-transformer"
+    return f"{provider}/{index.model}"
+
+
+def load_embedding_model(
+    index: SearchIndex,
+    models: dict[str, EmbeddingModel],
+) -> dict[str, EmbeddingModel]:
+    if not index.index_type == "embedding":
+        return models
+
+    assert isinstance(index, EmbeddingIndex), "Expected an EmbeddingIndex"
+    assert index.model is not None, "Embedding index must have model metadata"
+
+    key = get_embedding_model_key(index)
+    if key in models:
+        return models
+
+    provider = index.provider or "sentence-transformer"
+    if provider == "sentence-transformer":
+        model = SentenceTransformerModel(index.model)
+    elif provider == "open-clip":
+        model = OpenClipModel(index.model)
+    elif provider == "huggingface-image":
+        model = HuggingFaceImageModel(index.model)
+    else:
+        raise ValueError(f"Unknown embedding model provider {provider}")
+
+    models[key] = model
+    return models
 
 
 def load_kg_normalizers(kg: str) -> tuple[Normalizer, Normalizer]:
@@ -217,34 +313,31 @@ def find_obj_type_from_prefixes(
         return ObjType.UNKNOWN
 
 
-def is_embedding_index(index: SearchIndex) -> bool:
-    return index.index_type == "embedding"
+def format_index_meta(index: SearchIndex) -> str:
+    """Format index type and modality metadata."""
+    parts = [f'type="{index.index_type}"']
+    if isinstance(index, EmbeddingIndex) and index.modality:
+        parts.append(f"modalities=\"{'+'.join(index.modality)}\"")
+    return ", ".join(parts)
 
 
-def describe_index(index: SearchIndex | str) -> tuple[str, str]:
-    if isinstance(index, SearchIndex):
-        index = index.index_type
-
-    if index == "keyword":
-        title = "Keyword index"
-        desc = "Retrieves items by overlap between their label words and \
+def describe_index_type(index_type: str) -> str:
+    if index_type == "keyword":
+        return "Retrieves items by overlap between their label words and \
 the query keywords. The query keywords can match label words exactly or \
 as prefixes. No special query operators like AND/OR are supported."
 
-    elif index == "fuzzy":
-        title = "Fuzzy keyword index"
-        desc = "Retrieves items by overlap between their label words and \
+    elif index_type == "fuzzy":
+        return "Retrieves items by overlap between their label words and \
 the query keywords. The query keywords must not match label words exactly, but \
 some fuzziness is allowed. The longer a query keyword is, the more it can deviate \
 from a label word and still be considered a match, though it will also contribute \
 less to the overall score. No special query operators like AND/OR are supported."
 
-    elif index == "embedding":
-        title = "Embedding index"
-        desc = "Retrieves items by cosine similarity between their \
-label embeddings and the query embedding."
+    elif index_type == "embedding":
+        return "Retrieves items by cosine similarity between their \
+embeddings and the query embedding. The embedding model used depends on the \
+index and may support text, images, or both."
 
     else:
-        raise ValueError(f"Unknown index type {index}")
-
-    return title, desc
+        raise ValueError(f"Unknown index type {index_type}")

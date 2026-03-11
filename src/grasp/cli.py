@@ -4,7 +4,7 @@ import os
 import random
 import sys
 
-from search_rdf.model import TextEmbeddingModel
+from search_rdf.model import SentenceTransformerModel
 from tqdm import tqdm
 from universal_ml_utils.configuration import load_config
 from universal_ml_utils.io import (
@@ -784,7 +784,7 @@ def main():
         evaluate_grasp(args)
 
     elif args.command == "examples":
-        model = TextEmbeddingModel(args.emb_model)
+        model = SentenceTransformerModel(args.emb_model)
         index = task_to_index(args.task)
         index.build(
             args.examples_file,
