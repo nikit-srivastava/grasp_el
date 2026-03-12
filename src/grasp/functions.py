@@ -21,7 +21,7 @@ from grasp.sparql.types import (
     SelectResult,
     SelectRow,
 )
-from grasp.sparql.utils import find_all, parse_string
+from grasp.sparql.utils import find_all, parse_string, wrap_iri
 from grasp.utils import FunctionCallException
 
 if TYPE_CHECKING:
@@ -845,7 +845,7 @@ def verify_iri_or_literal(input: str, position: str, manager: KgManager) -> str 
         return None
 
     # url like, so add < and > and check again
-    input = f"<{input}>"
+    input = wrap_iri(input)
     if is_iri_or_literal(input, manager):
         return input
     else:

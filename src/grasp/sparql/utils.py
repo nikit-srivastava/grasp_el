@@ -103,7 +103,7 @@ def parse_into_binding(
             if pfx not in prefixes:
                 return None
 
-            uri = prefixes[pfx][1:] + name
+            uri = prefixes[pfx] + name
 
             # prefixed IRI
             return Binding(
@@ -171,7 +171,7 @@ def parse_into_binding(
                     if pfx not in prefixes:
                         return None
 
-                    datatype = prefixes[pfx][1:] + name
+                    datatype = prefixes[pfx] + name
 
                 return Binding(
                     typ="literal",
@@ -523,7 +523,7 @@ def fix_prefixes(
         second = prefix_decl["children"][2]["value"]
 
         short = first.split(":", 1)[0]
-        long = second[:-1]
+        long = second[1:-1]
         exist[short] = long
 
     base_decl = find(parse, "BaseDecl", last=True)
@@ -577,7 +577,7 @@ def fix_prefixes(
                 "children": [
                     {"name": "PREFIX", "value": "PREFIX"},
                     {"name": "PNAME_NS", "value": f"{pfx}:"},
-                    {"name": "IRIREF", "value": f"{long}>"},
+                    {"name": "IRIREF", "value": wrap_iri(long)},
                 ],
             }
         )
@@ -847,28 +847,24 @@ def is_iri(iri: str) -> bool:
     return iri.startswith("<") and iri.endswith(">")
 
 
+def wrap_iri(iri: str) -> str:
+    return f"<{iri}>"
+
+
 def format_iri(
     iri: str,
     prefixes: dict[str, str],
     base_uri: str | None = None,
 ) -> str:
-    if not is_iri(iri):
+    if "://" not in iri:
         return iri
-
-    # disabled for now because base is almost never needed
-    # elif not is_fq_iri(iri):
-    #     assert base_uri is not None, (
-    #         f"Could not find a scheme in the IRI {iri}, it seems "
-    #         f"you provided a relative IRI without a BASE URI"
-    #     )
-    #     iri = "<" + urljoin(base_uri[1:-1], iri[1:-1]) + ">"
 
     longest = find_longest_prefix(iri, prefixes)
     if longest is None:
         return iri
 
     short, long = longest
-    val = iri[len(long) : -1]
+    val = iri[len(long):]
 
     # check if no bad characters are in the short form
     # by url encoding it and checking if it is still the same
@@ -900,7 +896,7 @@ def load_qlever_prefixes(endpoint: str) -> dict[str, str]:
         prefix, uri = rest.split(":", 1)
         uri = uri.strip()
         assert is_iri(uri), "Prefix must be in IRI format"
-        prefixes[prefix.strip()] = uri[:-1]
+        prefixes[prefix.strip()] = uri[1:-1]
 
     return prefixes
 

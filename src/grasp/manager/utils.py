@@ -215,6 +215,8 @@ def load_kg_prefixes(kg: str, endpoint: str | None = None) -> dict[str, str]:
     prefix_file = os.path.join(kg_index_dir, "prefixes.json")
     if os.path.exists(prefix_file):
         prefixes = load_json(prefix_file)
+        # compatibility: strip leading < from old-format prefix files
+        prefixes = {k: v.lstrip("<") for k, v in prefixes.items()}
     else:
         try:
             prefixes = load_qlever_prefixes(endpoint or get_endpoint(kg))
@@ -265,25 +267,25 @@ def load_kg_indices(
 
 def get_common_sparql_prefixes() -> dict[str, str]:
     return {
-        "rdf": "<http://www.w3.org/1999/02/22-rdf-syntax-ns#",
-        "rdfs": "<http://www.w3.org/2000/01/rdf-schema#",
-        "owl": "<http://www.w3.org/2002/07/owl#",
-        "xsd": "<http://www.w3.org/2001/XMLSchema#",
-        "foaf": "<http://xmlns.com/foaf/0.1/",
-        "skos": "<http://www.w3.org/2004/02/skos/core#",
-        "dct": "<http://purl.org/dc/terms/",
-        "dc": "<http://purl.org/dc/elements/1.1/",
-        "prov": "<http://www.w3.org/ns/prov#",
-        "schema": "<http://schema.org/",
-        "geo": "<http://www.opengis.net/ont/geosparql#",
-        "geosparql": "<http://www.opengis.net/ont/geosparql#",
-        "geof": "<http://www.opengis.net/def/function/geosparql/",
-        "gn": "<http://www.geonames.org/ontology#",
-        "bd": "<http://www.bigdata.com/rdf#",
-        "hint": "<http://www.bigdata.com/queryHints#",
-        "wikibase": "<http://wikiba.se/ontology#",
-        "qb": "<http://purl.org/linked-data/cube#",
-        "void": "<http://rdfs.org/ns/void#",
+        "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+        "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+        "owl": "http://www.w3.org/2002/07/owl#",
+        "xsd": "http://www.w3.org/2001/XMLSchema#",
+        "foaf": "http://xmlns.com/foaf/0.1/",
+        "skos": "http://www.w3.org/2004/02/skos/core#",
+        "dct": "http://purl.org/dc/terms/",
+        "dc": "http://purl.org/dc/elements/1.1/",
+        "prov": "http://www.w3.org/ns/prov#",
+        "schema": "http://schema.org/",
+        "geo": "http://www.opengis.net/ont/geosparql#",
+        "geosparql": "http://www.opengis.net/ont/geosparql#",
+        "geof": "http://www.opengis.net/def/function/geosparql/",
+        "gn": "http://www.geonames.org/ontology#",
+        "bd": "http://www.bigdata.com/rdf#",
+        "hint": "http://www.bigdata.com/queryHints#",
+        "wikibase": "http://wikiba.se/ontology#",
+        "qb": "http://purl.org/linked-data/cube#",
+        "void": "http://rdfs.org/ns/void#",
     }
 
 

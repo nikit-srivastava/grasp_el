@@ -56,6 +56,7 @@ from grasp.sparql.utils import (
     load_sparql_parser,
     prettify,
     query_type,
+    wrap_iri,
 )
 from grasp.utils import clip, format_list, ordered_unique
 
@@ -212,7 +213,7 @@ class KgManager:
                     if val.lang is not None:
                         formatted += f" (lang:{val.lang})"
                     elif val.datatype is not None:
-                        datatype = self.format_iri(f"<{val.datatype}>")
+                        datatype = self.format_iri(val.datatype)
                         formatted += f" ({datatype})"
 
                     formatted_row.append(formatted)
@@ -666,7 +667,9 @@ class KgManager:
             assert "{IDS}" in info_sparql, (
                 "SPARQL must contain {IDS} placeholder for identifiers"
             )
-            info_sparql = info_sparql.replace("{IDS}", " ".join(identifiers))
+            info_sparql = info_sparql.replace(
+                "{IDS}", " ".join(wrap_iri(id) for id in identifiers)
+            )
             self.logger.debug(f"Retrieving infos with SPARQL:\n{info_sparql}")
             result = self.execute_sparql(
                 info_sparql,
