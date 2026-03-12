@@ -16,6 +16,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi import Request as HTTPRequest
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, conlist
+from search_rdf.model import SentenceTransformerModel
 from universal_ml_utils.io import dump_json, load_json
 from universal_ml_utils.logging import get_logger
 from universal_ml_utils.ops import consume_generator, partition_by
@@ -120,9 +121,15 @@ def serve(config: ServerConfig, log_level: int | str | None = None) -> None:
         allow_headers=["*"],
     )
 
-    managers, model = setup(config)
-    if model is None:
-        model = config.embedding_model
+    managers, models = setup(config)
+
+    examples_model = models.get(f"sentence-transformer/{config.embedding_model}")
+    if examples_model is None:
+        examples_model = config.embedding_model
+    else:
+        assert isinstance(examples_model, SentenceTransformerModel), (
+            f"Expected examples embedding model to be a SentenceTransformerModel, got {type(examples_model)}"
+        )
 
     kgs = [manager.kg for manager in managers]
 
@@ -134,7 +141,7 @@ def serve(config: ServerConfig, log_level: int | str | None = None) -> None:
         notes[task.value] = general_notes
         kg_notes[task.value] = kg_specific_notes
 
-        task_indices = load_example_indices(task.value, config, model)
+        task_indices = load_example_indices(task.value, config, examples_model)
         example_indices[task.value] = task_indices
 
     if config.share is not None:
