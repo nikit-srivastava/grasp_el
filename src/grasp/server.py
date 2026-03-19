@@ -282,7 +282,9 @@ def serve(config: ServerConfig, log_level: int | str | None = None) -> None:
             async def monitor_disconnect():
                 while not stop_event.is_set():
                     if await http_request.is_disconnected():
-                        logger.info(f"{prefix} Client disconnected, stopping generation")
+                        logger.info(
+                            f"{prefix} Client disconnected, stopping generation"
+                        )
                         stop_event.set()
                         return
                     await asyncio.sleep(1)
