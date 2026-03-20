@@ -16,7 +16,9 @@ from grasp.functions import (
 from grasp.manager import KgManager, format_kgs, load_kg_manager
 from grasp.manager.utils import EmbeddingModel, describe_index_type
 from grasp.model import Message, Response, call_model
-from grasp.tasks import get_task, rules as general_rules
+from grasp.tasks import get_task
+from grasp.tasks import rules as general_rules
+from grasp.tasks.base import GraspTask
 from grasp.tasks.examples import ExampleIndex
 from grasp.tasks.feedback import format_feedback, generate_feedback
 from grasp.tasks.sparql_qa.examples import find_examples
@@ -31,8 +33,7 @@ from grasp.utils import (
 
 
 def system_instructions(
-    t,
-    config: GraspConfig,
+    task: GraspTask,
     managers: list[KgManager],
     kg_notes: dict[str, list[str]],
     notes: list[str],
@@ -55,7 +56,7 @@ def system_instructions(
         index_infos.append(f'"{index_type}": {desc}')
 
     instructions = f"""\
-{t.system_information()}
+{task.system_information()}
 
 Available knowledge graphs:
 {format_kgs(managers, kg_notes)}
@@ -77,7 +78,7 @@ SPARQL prefixes for use in function calls:
 {format_prefixes(prefixes)}
 
 Additional rules to follow:
-{format_list(general_rules() + t.rules())}"""
+{format_list(general_rules() + task.rules())}"""
 
     return instructions
 
@@ -112,7 +113,7 @@ def load_notes(config: GraspConfig) -> tuple[list[str], dict[str, list[str]]]:
 
 
 def generate(
-    task: str,
+    task_name: str,
     input: Any,
     config: GraspConfig,
     managers: list[KgManager],
@@ -124,24 +125,24 @@ def generate(
     logger: Logger = get_logger("GRASP"),
     yield_output: bool = False,
 ) -> Generator[dict, None, dict]:
-    if task != "sparql-qa" and task != "general-qa":
+    if task_name != "sparql-qa" and task_name != "general-qa":
         # disable examples for tasks other than sparql-qa and general-qa
         # to avoid errors due to missing implementations
         config = deepcopy(config)
         config.force_examples = None
-        logger.debug(f"Disabling examples for {task} task")
-    if task == "cea":
+        logger.debug(f"Disabling examples for {task_name} task")
+    if task_name == "cea":
         config = deepcopy(config)
         config.know_before_use = True
         logger.debug("Enabling know-before-use for CEA task")
 
-    t = get_task(task, managers, config)
+    task = get_task(task_name, managers, config)
 
     # setup functions
     fns = kg_functions(managers, config.fn_set)
-    fns.extend(t.function_definitions())
+    fns.extend(task.function_definitions())
 
-    input = t.setup(input)
+    input = task.setup(input)
     yield {"type": "input", "input": input}
 
     if notes is None:
@@ -150,7 +151,7 @@ def generate(
         kg_notes = {}
 
     # setup messages
-    system_instruction = system_instructions(t, config, managers, kg_notes, notes)
+    system_instruction = system_instructions(task, managers, kg_notes, notes)
     yield {
         "type": "system",
         "config": config.model_dump(),
@@ -288,10 +289,11 @@ def generate(
                     tool_call.name,
                     tool_call.args,
                     known,
-                    t,
+                    task,
                     example_indices,
                 )
             except Exception as e:
+                tool_call.error = str(e)
                 result = f"Call to function {tool_call.name} returned an error:\n{e}"
 
                 # log full tracback for debugging
@@ -309,7 +311,7 @@ def generate(
                 "result": tool_call.result,
             }
 
-            if t.done(tool_call.name):
+            if task.done(tool_call.name):
                 # we are done
                 should_stop = True
 
@@ -331,7 +333,7 @@ def generate(
             break
 
         # get latest output
-        output = t.output(messages)
+        output = task.output(messages)
         if output is None:
             break
 
@@ -339,7 +341,7 @@ def generate(
         try:
             inputs = [message.content for message in messages if message.role == "user"]
             feedback = generate_feedback(
-                t,
+                task,
                 kg_notes,
                 notes,
                 inputs,  # type: ignore
@@ -373,7 +375,7 @@ def generate(
         # reset loop detection
         last_resp_hash = None
 
-    output = t.output(messages)
+    output = task.output(messages)
 
     out_msg = Message(
         role="output",
@@ -386,7 +388,7 @@ def generate(
     end = time.perf_counter()
     output = {
         "type": "output",
-        "task": task,
+        "task": task_name,
         "output": output,
         "elapsed": end - start,
         "error": error,

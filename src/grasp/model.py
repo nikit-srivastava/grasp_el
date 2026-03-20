@@ -26,6 +26,7 @@ class ToolCall(BaseModel):
     name: str
     args: dict[str, Any]
     result: str | None = None
+    error: str | None = None
 
 
 class Reasoning(BaseModel):
@@ -131,7 +132,10 @@ class Response(BaseModel):
         # Extract token_ids and prompt_token_ids from provider_specific_fields (vLLM extension)
         token_ids = None
         prompt_token_ids = None
-        if hasattr(choice, "provider_specific_fields") and choice.provider_specific_fields:
+        if (
+            hasattr(choice, "provider_specific_fields")
+            and choice.provider_specific_fields
+        ):
             token_ids = choice.provider_specific_fields.get("token_ids")
             prompt_token_ids = choice.provider_specific_fields.get("prompt_token_ids")
         # Also check response-level attributes
@@ -360,7 +364,11 @@ def call_model(
 
     if api == "completions":
         # Auto-enable logprobs when return_token_ids is requested
-        request_logprobs = config.model_kwargs.get("return_token_ids", False) if config.model_kwargs else False
+        request_logprobs = (
+            config.model_kwargs.get("return_token_ids", False)
+            if config.model_kwargs
+            else False
+        )
 
         # use old chat completions API
         completions_resp: ModelResponse = completion(
