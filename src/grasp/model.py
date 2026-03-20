@@ -55,6 +55,7 @@ class Response(BaseModel):
     prompt_token_ids: list[int] | None = None
     token_ids: list[int] | None = None
     token_logprobs: list[float] | None = None
+    token_texts: list[str] | None = None
 
     @property
     def is_empty(self) -> bool:
@@ -121,9 +122,11 @@ class Response(BaseModel):
 
         # Extract logprobs from choice.logprobs.content (standard OpenAI format)
         token_logprobs = None
+        token_texts = None
         logprobs = getattr(choice, "logprobs", None)
         if logprobs and getattr(logprobs, "content", None):
             token_logprobs = [entry.logprob for entry in logprobs.content]
+            token_texts = [entry.token for entry in logprobs.content]
 
         # Extract token_ids and prompt_token_ids from provider_specific_fields (vLLM extension)
         token_ids = None
@@ -146,6 +149,7 @@ class Response(BaseModel):
             prompt_token_ids=prompt_token_ids,
             token_ids=token_ids,
             token_logprobs=token_logprobs,
+            token_texts=token_texts,
         )
 
     @staticmethod
@@ -377,7 +381,6 @@ def call_model(
             extra_body=config.model_kwargs,
             # logprobs (auto-enabled with return_token_ids for vLLM)
             logprobs=True if request_logprobs else None,
-            top_logprobs=1 if request_logprobs else None,
             # drop unsupported parameters
             drop_params=True,
             num_retries=num_retries,
