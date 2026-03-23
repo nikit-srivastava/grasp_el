@@ -585,9 +585,7 @@ class KgManager:
             else:
                 variants = normalizer.default_variants()
 
-            matched_via = None
-            if field_map:
-                matched_via = field_map.get(identifier)
+            matched_via = field_map.get(identifier)
 
             alternative = self.build_alternative_with_infos(
                 identifier,
