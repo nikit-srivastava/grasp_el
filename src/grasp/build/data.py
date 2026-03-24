@@ -58,9 +58,7 @@ def download_data(
     elif format == "tsv":
         bindings = stream_tsv(endpoint, sparql, logger, params)
     else:
-        raise ValueError(
-            f"Unknown format: {format!r}, expected 'json', 'csv', or 'tsv'"
-        )
+        raise ValueError(f"Unknown format: {format}, expected 'json', 'csv', or 'tsv'")
 
     dump_jsonl(
         prepare_items(bindings, prefixes, add_id_as_label, logger),
@@ -179,11 +177,7 @@ def stream_json(
                 return b""
             return next(self.stream, b"")
 
-    bindings = ijson.items(
-        _StreamReader(response),
-        "results.bindings.item",
-        multiple_values=True,
-    )
+    bindings = ijson.items(_StreamReader(response), "results.bindings.item")
 
     for binding in bindings:
         id = binding["id"]["value"]
@@ -274,15 +268,7 @@ def stream_tsv(
         if not line:
             continue
 
-        cells = line.split("\t")
-        if len(cells) != len(columns):
-            logger.warning(
-                f"Skipping malformed line with {len(cells):,} values for "
-                f"{len(columns):,} columns: {line[:100]}..."
-            )
-            continue
-
-        row = dict(zip(columns, cells))
+        row = dict(zip(columns, line.split("\t")))
 
         id_cell = row.get("id", "")
         if not id_cell:
@@ -290,9 +276,7 @@ def stream_tsv(
 
         id_binding = parse_into_binding(id_cell, parser)
         if id_binding is None:
-            logger.warning(
-                f"Failed to parse id {id_cell} as IRI or literal, skipping row"
-            )
+            logger.warning(f"Failed to parse id {id_cell}, skipping row")
             continue
 
         id = id_binding.value
@@ -300,10 +284,8 @@ def stream_tsv(
         value_cell = row.get("value", "")
         if value_cell:
             value_binding = parse_into_binding(value_cell, parser)
-            if value_binding is None or value_binding.typ != "literal":
-                logger.warning(
-                    f"Failed to parse value {value_cell} as literal, skipping row"
-                )
+            if value_binding is None:
+                logger.warning(f"Failed to parse value {value_cell}, skipping row")
                 continue
 
             value = value_binding.value
@@ -313,10 +295,8 @@ def stream_tsv(
         tag_cell = row.get("tag", row.get("tags", ""))
         if tag_cell:
             tag_binding = parse_into_binding(tag_cell, parser)
-            if tag_binding is None or tag_binding.typ != "literal":
-                logger.warning(
-                    f"Failed to parse tag {tag_cell} as literal, skipping row"
-                )
+            if tag_binding is None:
+                logger.warning(f"Failed to parse tag {tag_cell}, skipping row")
                 continue
 
             tags = tag_binding.value.split(",")
