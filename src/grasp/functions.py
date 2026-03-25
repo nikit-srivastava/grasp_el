@@ -20,7 +20,7 @@ from grasp.sparql.types import (
     SelectResult,
     SelectRow,
 )
-from grasp.sparql.utils import find_all, parse_string, wrap_iri
+from grasp.sparql.utils import find_all, has_scheme, parse_string, wrap_iri
 from grasp.utils import FunctionCallException
 
 if TYPE_CHECKING:
@@ -824,11 +824,21 @@ def verify_iri_or_literal(input: str, position: str, manager: KgManager) -> str 
     # parse and resolve percent encoding in IRIs
     binding = parse_into_binding(input, manager.iri_literal_parser, manager.prefixes)
 
+    if binding is None and has_scheme(input):
+        # fallback for full IRIs given without angle brackets
+        binding = parse_into_binding(
+            wrap_iri(input),
+            manager.iri_literal_parser,
+            manager.prefixes,
+        )
+
     if binding is None and position == "object":
         # fallback for string literals because they are typically given without quotes
         # but the parser expects them to be quoted
         binding = parse_into_binding(
-            f'"{input}"', manager.iri_literal_parser, manager.prefixes
+            f'"{input}"',
+            manager.iri_literal_parser,
+            manager.prefixes,
         )
 
     if binding is None:
@@ -864,7 +874,8 @@ def list_triples(
             raise FunctionCallException(
                 f'Constraint "{const}" for {pos} position \
 is not a valid {expected}. IRIs can be given in prefixed form, like wd:Q937, \
-or in full form, like <http://www.wikidata.org/entity/Q937>, and need to be properly \
+or in full form, like <http://www.wikidata.org/entity/Q937> or \
+http://www.wikidata.org/entity/Q937, and need to be properly \
 escaped, encoded, and quoted if necessary.'
             )
 
@@ -1048,7 +1059,8 @@ object should be constrained at once."
                 raise FunctionCallException(
                     f'Constraint "{const}" for {pos} position \
 is not a valid {expected}. IRIs can be given in prefixed form, like wd:Q937, \
-or in full form, like <http://www.wikidata.org/entity/Q937>, and need to be properly \
+or in full form, like <http://www.wikidata.org/entity/Q937> or \
+http://www.wikidata.org/entity/Q937, and need to be properly \
 escaped, encoded, and quoted if necessary.'
                 )
 

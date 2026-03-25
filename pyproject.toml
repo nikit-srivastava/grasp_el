@@ -23,7 +23,6 @@ dependencies = [
   # utils
   "requests>=2.32.0",
   "tqdm>=4.65.0",
-  "validators>=0.34.0",
   "scipy>=1.15.0",
   "universal-ml-utils>=0.1.5",
   "grammar-utils>=0.1.5",

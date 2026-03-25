@@ -867,22 +867,28 @@ def wrap_iri(iri: str) -> str:
     return f"<{iri}>"
 
 
+def has_scheme(iri: str) -> bool:
+    return "://" in iri
+
+
 def needs_encoding(val: str) -> bool:
     return quote(val) != val
 
 
-def format_iri(
-    iri: str,
-    prefixes: dict[str, str],
-    base_uri: str | None = None,
-) -> str:
+def format_iri(iri: str, prefixes: dict[str, str], base_uri: str | None = None) -> str:
     # strip angle brackets if present (e.g. from SPARQL parse tree IRIREF nodes)
     wrapped = is_iri(iri)
     if wrapped:
         iri = iri[1:-1]
 
-    if "://" not in iri:
-        return wrap_iri(iri) if wrapped else iri
+    if not has_scheme(iri):
+        if base_uri is None:
+            # return as-is if no base URI is given
+            return wrap_iri(iri) if wrapped else iri
+
+        # resolve relative IRI against base URI
+        base = base_uri[1:-1] if is_iri(base_uri) else base_uri
+        iri = base + iri
 
     longest = find_longest_prefix(iri, prefixes)
     if longest is None:
@@ -890,9 +896,7 @@ def format_iri(
 
     short, long = longest
     val = iri[len(long) :]
-    if needs_encoding(val):
-        return short + ":" + quote(val)
-    return short + ":" + val
+    return short + ":" + quote(val)
 
 
 def load_qlever_prefixes(endpoint: str) -> dict[str, str]:
