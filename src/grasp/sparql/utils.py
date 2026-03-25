@@ -892,7 +892,8 @@ def format_iri(iri: str, prefixes: dict[str, str], base_uri: str | None = None) 
 
     longest = find_longest_prefix(iri, prefixes)
     if longest is None:
-        return wrap_iri(quote(iri, safe=":/#@!$&'()*+,;=-._~?"))
+        encoded = quote(iri, safe=":/#@!$&'()*+,;=-._~?")
+        return wrap_iri(encoded) if wrapped else encoded
 
     short, long = longest
     val = iri[len(long) :]
