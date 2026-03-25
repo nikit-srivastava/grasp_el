@@ -17,10 +17,10 @@ from grasp.manager.utils import (
     EmbeddingModel,
     Index,
     SearchIndex,
-    load_image_from_url,
     format_index_meta,
     get_embedding_model_key,
     load_embedding_model,
+    load_image_from_url,
     load_kg_indices,
     load_kg_info_caches,
     load_kg_info_sparqls,
@@ -168,6 +168,7 @@ class KgManager:
         show_left_columns: int = 5,
         show_right_columns: int = 5,
         column_names: list[str] | None = None,
+        clip_values: bool = True,
     ) -> str:
         # run sparql against endpoint, format result as string
         if isinstance(result, AskResult):
@@ -209,7 +210,7 @@ class KgManager:
                     formatted_row.append(val.identifier())
 
                 elif val.typ == "literal":
-                    formatted = clip(val.value)
+                    formatted = clip(val.value) if clip_values else val.value
                     if val.lang is not None:
                         formatted += f" (lang:{val.lang})"
                     elif val.datatype is not None:

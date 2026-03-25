@@ -131,8 +131,23 @@ list(kg="wikidata", property="wdt:P19")""",
                         "type": ["string", "null"],
                         "description": "IRI or literal for constraining the object (null if not constrained)",
                     },
+                    "page": {
+                        "type": ["integer", "null"],
+                        "description": "Page number for paginating results (null or 1 for the first page)",
+                    },
+                    "unclipped": {
+                        "type": ["boolean", "null"],
+                        "description": "If true, show full unclipped literal values (null or false to clip literals)",
+                    },
                 },
-                "required": ["kg", "subject", "property", "object"],
+                "required": [
+                    "kg",
+                    "subject",
+                    "property",
+                    "object",
+                    "page",
+                    "unclipped",
+                ],
                 "additionalProperties": False,
             },
             "strict": True,
@@ -489,6 +504,8 @@ def call_function(
             fn_args.get("subject"),
             fn_args.get("property"),
             fn_args.get("object"),
+            fn_args.get("page") or 1,
+            fn_args.get("unclipped") or False,
             config.list_k,
             known,
         )
@@ -856,9 +873,14 @@ def list_triples(
     subject: str | None,
     property: str | None,
     obj: str | None,
+    page: int,
+    unclipped: bool,
     k: int,
     known: set[str],
 ) -> str:
+    if page < 1:
+        raise FunctionCallException("Page number must be at least 1")
+
     manager, _ = find_manager(managers, kg)
 
     triple = []
@@ -983,9 +1005,14 @@ SELECT ?s ?p ?o WHERE {{
     permutation = sorted(permutation, key=lambda item: item[0])
     result.data = [result.data[i] for _, i in permutation]
 
+    # apply pagination
+    start = (page - 1) * k
+    end = page * k
+    result.data = result.data[start:end]
+
     # update known
-    update_known_from_rows(known, result.rows(end=k), manager.entity_normalizer)
-    update_known_from_rows(known, result.rows(end=k), manager.property_normalizer)
+    update_known_from_rows(known, result.rows(), manager.entity_normalizer)
+    update_known_from_rows(known, result.rows(), manager.property_normalizer)
 
     # override column names
     column_names = ["subject", "property", "object"]
@@ -997,6 +1024,7 @@ SELECT ?s ?p ?o WHERE {{
         show_left_columns=3,
         show_right_columns=0,
         column_names=column_names,
+        clip_values=not unclipped,
     )
 
 
