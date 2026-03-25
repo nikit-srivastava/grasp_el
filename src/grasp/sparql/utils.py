@@ -4,7 +4,7 @@ import uuid
 from copy import deepcopy
 from importlib import resources
 from typing import Any, Iterator
-from urllib.parse import quote_plus, urlparse, urlunparse
+from urllib.parse import quote, unquote, urlparse, urlunparse
 
 import requests
 from grammar_utils.parse import LR1Parser
@@ -92,10 +92,10 @@ def parse_into_binding(
 
     match parse["name"]:
         case "IRIREF":
-            # already an IRI
+            # already an IRI, unquote percent encoding
             return Binding(
                 typ="uri",
-                value=input[1:-1],
+                value=unquote(input[1:-1]),
             )
 
         case "PNAME_LN" | "PNAME_NS":
@@ -103,7 +103,8 @@ def parse_into_binding(
             if prefixes is None or pfx not in prefixes:
                 return None
 
-            uri = prefixes[pfx] + name
+            # unquote percent encoding in local part
+            uri = prefixes[pfx] + unquote(name)
 
             # prefixed IRI
             return Binding(
@@ -536,8 +537,9 @@ def fix_prefixes(
 
     seen = set()
     for iri in find_all(parse, "IRIREF", skip=skip):
+        # unquote first to avoid double-encoding percent-encoded IRIs
         formatted = format_iri(
-            iri["value"],
+            unquote(iri["value"]),
             prefixes,
             base_uri=base_uri,
         )
@@ -551,13 +553,27 @@ def fix_prefixes(
 
     for pfx in find_all(parse, {"PNAME_NS", "PNAME_LN"}, skip=skip):
         short, val = pfx["value"].split(":", 1)
+        decoded_val = unquote(val)
+
+        if decoded_val != val and needs_encoding(decoded_val):
+            # local part was percent-encoded and decoded value still needs
+            # encoding, expand to full IRI since it may not be valid
+            # in prefixed names
+            long = exist.get(short) or prefixes.get(short)
+            if long:
+                pfx["value"] = wrap_iri(long + decoded_val)
+                pfx["name"] = "IRIREF"
+                continue
+            # unknown prefix, keep as-is (will fail at execution)
+        elif decoded_val != val:
+            # percent-encoded but decoded value is safe for prefixed form
+            val = decoded_val
+
         long = exist.get(short, "")
-
         if reverse_prefixes.get(long, short) != short:
-            # replace existing short forms with our own short form
             short = reverse_prefixes[long]
-            pfx["value"] = f"{short}:{val}"
 
+        pfx["value"] = f"{short}:{val}"
         seen.add(short)
 
     updated_prologue = []
@@ -851,6 +867,10 @@ def wrap_iri(iri: str) -> str:
     return f"<{iri}>"
 
 
+def needs_encoding(val: str) -> bool:
+    return quote(val) != val
+
+
 def format_iri(
     iri: str,
     prefixes: dict[str, str],
@@ -866,17 +886,13 @@ def format_iri(
 
     longest = find_longest_prefix(iri, prefixes)
     if longest is None:
-        return wrap_iri(iri) if wrapped else iri
+        return wrap_iri(quote(iri, safe=":/#@!$&'()*+,;=-._~?"))
 
     short, long = longest
     val = iri[len(long) :]
-
-    # check if no bad characters are in the short form
-    # by url encoding it and checking if it is still the same
-    if quote_plus(val) == val:
-        return short + ":" + val
-    else:
-        return wrap_iri(iri) if wrapped else iri
+    if needs_encoding(val):
+        return short + ":" + quote(val)
+    return short + ":" + val
 
 
 def load_qlever_prefixes(endpoint: str) -> dict[str, str]:

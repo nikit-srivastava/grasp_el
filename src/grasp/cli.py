@@ -4,9 +4,8 @@ import os
 import random
 import sys
 
-from termcolor import colored
-
 from search_rdf.model import SentenceTransformerModel
+from termcolor import colored
 from tqdm import tqdm
 from universal_ml_utils.configuration import load_config
 from universal_ml_utils.io import (
@@ -371,11 +370,18 @@ def parse_args() -> argparse.Namespace:
         help="When to add a label fallback based on entity/property IDs",
     )
     data_parser.add_argument(
-        "--format",
+        "--entity-file",
         type=str,
-        default="json",
-        choices=["json", "csv", "tsv"],
-        help="Format to request from the SPARQL endpoint (default: json)",
+        default=None,
+        help="Path to file with entity SPARQL results in JSON format "
+        "(skip live query for entities)",
+    )
+    data_parser.add_argument(
+        "--property-file",
+        type=str,
+        default=None,
+        help="Path to file with property SPARQL results in JSON format "
+        "(skip live query for properties)",
     )
     add_overwrite_arg(data_parser)
 
@@ -692,10 +698,11 @@ def get_grasp_data(args: argparse.Namespace) -> None:
         args.entity_sparql,
         args.property_sparql,
         query_params,
-        args.overwrite,
         args.add_id_as_label,
+        args.entity_file,
+        args.property_file,
         args.log_level,
-        args.format,
+        args.overwrite,
     )
 
 

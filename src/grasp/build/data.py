@@ -1,4 +1,3 @@
-import csv
 import json
 import os
 from logging import Logger
@@ -21,44 +20,39 @@ from grasp.sparql.utils import (
     find_longest_prefix,
     get_endpoint,
     load_entity_index_sparql,
-    load_iri_and_literal_parser,
     load_property_index_sparql,
-    parse_into_binding,
 )
 from grasp.utils import get_index_dir, ordered_unique
-
-Binding = tuple[str, str, list[str]]  # (id, value, tags)
 
 
 def download_data(
     out_dir: str,
-    endpoint: str,
     sparql: str,
     logger: Logger,
     prefixes: dict[str, str],
+    endpoint: str | None = None,
     params: dict[str, str] | None = None,
     add_id_as_label: None | str = None,
+    result_file: str | None = None,
     overwrite: bool = False,
-    format: str = "json",
 ) -> None:
     data_file = Path(out_dir, "data.jsonl")
     if data_file.exists() and not overwrite:
         logger.info(f"Data already exists at {data_file}, skipping download")
         return
 
-    logger.info(
-        f"Downloading data to {data_file} from {endpoint} "
-        f"with parameters {params or {}} and SPARQL:\n{sparql}"
-    )
-
-    if format == "json":
-        bindings = stream_json(endpoint, sparql, params)
-    elif format == "csv":
-        bindings = stream_csv(endpoint, sparql, params)
-    elif format == "tsv":
-        bindings = stream_tsv(endpoint, sparql, logger, params)
+    if result_file is not None:
+        logger.info(f"Loading data to {data_file} from file {result_file}")
+        bindings = stream_json_file(result_file)
     else:
-        raise ValueError(f"Unknown format: {format}, expected 'json', 'csv', or 'tsv'")
+        assert endpoint is not None, (
+            "Endpoint must be provided if no result file is given"
+        )
+        logger.info(
+            f"Downloading data to {data_file} from {endpoint} "
+            f"with parameters {params or {}} and SPARQL:\n{sparql}"
+        )
+        bindings = stream_json(endpoint, sparql, params)
 
     dump_jsonl(
         prepare_items(bindings, prefixes, add_id_as_label, logger),
@@ -87,14 +81,16 @@ def get_data(
     entity_query: str | None = None,
     property_query: str | None = None,
     query_params: dict[str, str] | None = None,
-    overwrite: bool = False,
     add_id_as_label: str | None = None,
+    entity_file: str | None = None,
+    property_file: str | None = None,
     log_level: str | int | None = None,
-    format: str = "json",
+    overwrite: bool = False,
 ) -> None:
     logger = get_logger("GRASP DATA", log_level)
 
-    if endpoint is None:
+    needs_endpoint = entity_file is None or property_file is None
+    if endpoint is None and needs_endpoint:
         endpoint = get_endpoint(kg)
         logger.info(
             f"Using endpoint {endpoint} for {kg} because "
@@ -114,14 +110,14 @@ def get_data(
     ent_sparql = entity_query or load_entity_index_sparql()
     download_data(
         ent_dir,
-        endpoint,
         ent_sparql,
         logger,
         prefixes,
+        endpoint,
         query_params,
         add_id_as_label,
+        entity_file,
         overwrite,
-        format,
     )
     dump_text(ent_sparql, os.path.join(ent_dir, "index.sparql"))
     build_data_and_mapping(ent_dir, logger, overwrite)
@@ -132,14 +128,14 @@ def get_data(
     prop_sparql = property_query or load_property_index_sparql()
     download_data(
         prop_dir,
-        endpoint,
         prop_sparql,
         logger,
         prefixes,
+        endpoint,
         query_params,
         add_id_as_label="always",  # for properties we also want to search via id
+        result_file=property_file,
         overwrite=overwrite,
-        format=format,
     )
     dump_text(prop_sparql, os.path.join(prop_dir, "index.sparql"))
     build_data_and_mapping(prop_dir, logger, overwrite)
@@ -149,7 +145,7 @@ def stream_json(
     endpoint: str,
     sparql: str,
     query_params: dict[str, str] | None = None,
-) -> Iterator[Binding]:
+) -> Iterator[dict]:
     try:
         headers = {
             "Accept": "application/sparql-results+json",
@@ -177,133 +173,12 @@ def stream_json(
                 return b""
             return next(self.stream, b"")
 
-    bindings = ijson.items(_StreamReader(response), "results.bindings.item")
-
-    for binding in bindings:
-        id = binding["id"]["value"]
-        value = binding["value"]["value"] if "value" in binding else ""
-
-        tag_binding = binding.get("tag", binding.get("tags", None))
-        if tag_binding is not None:
-            tags = tag_binding["value"].split(",")
-        else:
-            tags = []
-
-        yield id, value, tags
+    yield from ijson.items(_StreamReader(response), "results.bindings.item")
 
 
-def stream_csv(
-    endpoint: str,
-    sparql: str,
-    query_params: dict[str, str] | None = None,
-) -> Iterator[Binding]:
-    try:
-        headers = {
-            "Accept": "text/csv",
-            "Content-Type": "application/sparql-query",
-            "User-Agent": "grasp-data-bot",
-        }
-
-        response = requests.post(
-            endpoint,
-            data=sparql,
-            params=query_params,
-            headers=headers,
-            stream=True,
-        )
-        response.raise_for_status()
-    except Exception as e:
-        raise ValueError(f"Failed to stream SPARQL results as CSV: {e}") from e
-
-    lines = response.iter_lines(decode_unicode=True)
-    reader = csv.DictReader(lines)
-
-    for row in reader:
-        id = row["id"]
-        value = row.get("value", "") or ""
-
-        tag_value = row.get("tag", row.get("tags", None))
-        if tag_value:
-            tags = tag_value.split(",")
-        else:
-            tags = []
-
-        yield id, value, tags
-
-
-def stream_tsv(
-    endpoint: str,
-    sparql: str,
-    logger: Logger,
-    query_params: dict[str, str] | None = None,
-) -> Iterator[Binding]:
-    try:
-        headers = {
-            "Accept": "text/tab-separated-values",
-            "Content-Type": "application/sparql-query",
-            "User-Agent": "grasp-data-bot",
-        }
-
-        response = requests.post(
-            endpoint,
-            data=sparql,
-            params=query_params,
-            headers=headers,
-            stream=True,
-        )
-        response.raise_for_status()
-    except Exception as e:
-        raise ValueError(f"Failed to stream SPARQL results as TSV: {e}") from e
-
-    parser = load_iri_and_literal_parser()
-    lines = response.iter_lines(decode_unicode=True)
-
-    # first line is header with ?var names
-    header_line = next(lines, None)
-    if header_line is None:
-        return
-    columns = [col.lstrip("?") for col in header_line.split("\t")]
-
-    for line in lines:
-        if not line:
-            continue
-
-        row = dict(zip(columns, line.split("\t")))
-
-        id_cell = row.get("id", "")
-        if not id_cell:
-            continue
-
-        id_binding = parse_into_binding(id_cell, parser)
-        if id_binding is None:
-            logger.warning(f"Failed to parse id {id_cell}, skipping row")
-            continue
-
-        id = id_binding.value
-
-        value_cell = row.get("value", "")
-        if value_cell:
-            value_binding = parse_into_binding(value_cell, parser)
-            if value_binding is None:
-                logger.warning(f"Failed to parse value {value_cell}, skipping row")
-                continue
-
-            value = value_binding.value
-        else:
-            value = ""
-
-        tag_cell = row.get("tag", row.get("tags", ""))
-        if tag_cell:
-            tag_binding = parse_into_binding(tag_cell, parser)
-            if tag_binding is None:
-                logger.warning(f"Failed to parse tag {tag_cell}, skipping row")
-                continue
-
-            tags = tag_binding.value.split(",")
-        else:
-            tags = []
-
-        yield id, value, tags
+def stream_json_file(path: str) -> Iterator[dict]:
+    with open(path, "r") as f:
+        yield from ijson.items(f, "results.bindings.item")
 
 
 def split_iri(iri: str) -> tuple[str, str]:
@@ -372,8 +247,21 @@ def split_at_punctuation(s: str) -> Iterator[str]:
         yield s[start:]
 
 
+def parse_binding(binding: dict) -> tuple[str, str, list[str]]:
+    id = binding["id"]["value"]
+    value = binding["value"]["value"] if "value" in binding else ""
+
+    tag_binding = binding.get("tag", binding.get("tags", None))
+    if tag_binding is not None:
+        tags = tag_binding["value"].split(",")
+    else:
+        tags = []
+
+    return id, value, tags
+
+
 def prepare_items(
-    bindings: Iterator[Binding],
+    bindings: Iterator[dict],
     prefixes: dict[str, str],
     add_id_as_label: None | str = None,
     logger: Logger | None = None,
@@ -381,7 +269,9 @@ def prepare_items(
     # collect all labels for an id (which are consecutive in the stream)
     last_id = None
     fields = []
-    for num, (id, value, tags) in enumerate(bindings, start=1):
+    for num, binding in enumerate(bindings, start=1):
+        id, value, tags = parse_binding(binding)
+
         if logger and num % 1_000_000 == 0:
             logger.info(f"Processed {num:,} bindings so far")
 

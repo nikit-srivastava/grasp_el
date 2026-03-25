@@ -3,7 +3,6 @@ from dataclasses import dataclass
 from itertools import chain
 from typing import TYPE_CHECKING, Any, Iterable
 
-import validators
 from search_rdf import EmbeddingIndex
 from universal_ml_utils.ops import partition_by
 
@@ -563,6 +562,7 @@ def call_function(
             known,
             fn_args.get("index", "entity"),
             fn_args.get("query_type", "text"),
+            know_before_use=config.know_before_use,
         )
 
     elif task is not None:
@@ -654,8 +654,7 @@ def check_known(manager: KgManager, sparql: str, known: set[str]):
 The following knowledge graph items are used in the SPARQL query \
 without being known from previous function call results. \
 This does not mean they are invalid, but you should verify \
-that they indeed exist in the knowledge graphs before executing the SPARQL \
-query again:
+that they indeed exist in the knowledge graphs before trying again:
 {not_seen}""")
 
 
@@ -821,35 +820,24 @@ def execute_sparql(
     return ExecutionResult(sparql, formatted, result)
 
 
-def is_iri_or_literal(iri: str, manager: KgManager) -> bool:
-    try:
-        _ = parse_string(iri, manager.iri_literal_parser)
-        return True
-    except Exception:
-        return False
-
-
 def verify_iri_or_literal(input: str, position: str, manager: KgManager) -> str | None:
-    if is_iri_or_literal(input, manager):
-        return input
+    # parse and resolve percent encoding in IRIs
+    binding = parse_into_binding(input, manager.iri_literal_parser, manager.prefixes)
 
-    url = validators.url(input)
+    if binding is None and position == "object":
+        # fallback for string literals because they are typically given without quotes
+        # but the parser expects them to be quoted
+        binding = parse_into_binding(
+            f'"{input}"', manager.iri_literal_parser, manager.prefixes
+        )
 
-    if position == "object" and not url:
-        # check first if it is a string literal
-        input = f'"{input}"'
-        if is_iri_or_literal(input, manager):
-            return input
-
-    elif not url:
+    if binding is None:
         return None
 
-    # url like, so add < and > and check again
-    input = wrap_iri(input)
-    if is_iri_or_literal(input, manager):
-        return input
-    else:
-        return None
+    if binding.typ == "uri":
+        return wrap_iri(binding.value)
+
+    return binding.identifier()
 
 
 def list_triples(
@@ -875,9 +863,9 @@ def list_triples(
             expected = "IRI" if pos != "object" else "IRI or literal"
             raise FunctionCallException(
                 f'Constraint "{const}" for {pos} position \
-is not a valid {expected}. IRIs can be given in prefixed form, like "wd:Q937", \
-as URIs, like "http://www.wikidata.org/entity/Q937", \
-or in full form, like "<http://www.wikidata.org/entity/Q937>".'
+is not a valid {expected}. IRIs can be given in prefixed form, like wd:Q937, \
+or in full form, like <http://www.wikidata.org/entity/Q937>, and need to be properly \
+escaped, encoded, and quoted if necessary.'
             )
 
         bindings.append(f"BIND({ver_const} AS ?{pos[0]})")
@@ -1059,9 +1047,9 @@ object should be constrained at once."
                 expected = "IRI" if pos != "object" else "IRI or literal"
                 raise FunctionCallException(
                     f'Constraint "{const}" for {pos} position \
-is not a valid {expected}. IRIs can be given in prefixed form, like "wd:Q937", \
-as URIs, like "http://www.wikidata.org/entity/Q937", \
-or in full form, like "<http://www.wikidata.org/entity/Q937>".'
+is not a valid {expected}. IRIs can be given in prefixed form, like wd:Q937, \
+or in full form, like <http://www.wikidata.org/entity/Q937>, and need to be properly \
+escaped, encoded, and quoted if necessary.'
                 )
 
             pos_values[pos] = ver_const
@@ -1129,9 +1117,18 @@ def search_with_filter(
     index: str = "entity",
     query_type: str = "text",
     max_results: int = MAX_RESULTS,
+    know_before_use: bool = False,
     **search_kwargs: Any,
 ) -> str:
-    manager, _ = find_manager(managers, kg)
+    manager, others = find_manager(managers, kg)
+
+    # fix prefixes with managers
+    sparql = manager.fix_prefixes(sparql)
+    for other in others:
+        sparql = other.fix_prefixes(sparql)
+
+    if know_before_use:
+        check_known(manager, sparql, known)
 
     identifier_map = None
     info = ""
