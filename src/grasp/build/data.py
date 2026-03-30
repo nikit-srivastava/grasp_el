@@ -12,10 +12,7 @@ from tqdm import tqdm
 from universal_ml_utils.io import dump_jsonl, dump_text, load_jsonl
 from universal_ml_utils.logging import get_logger
 
-from grasp.manager.utils import (
-    get_common_sparql_prefixes,
-    load_kg_prefixes,
-)
+from grasp.manager.utils import load_kg_info
 from grasp.sparql.utils import (
     find_longest_prefix,
     get_endpoint,
@@ -97,8 +94,7 @@ def get_data(
             "no endpoint is set in the config"
         )
 
-    prefixes = get_common_sparql_prefixes()
-    prefixes.update(load_kg_prefixes(kg))
+    prefixes, _ = load_kg_info(kg)
 
     logger.info(f"Using prefixes:\n{json.dumps(prefixes, indent=2)}")
 

@@ -309,11 +309,12 @@ def evaluate_with_judge(
 ):
     logger = get_logger("GRASP EVALUATION", log_level)
 
-    if not judge_config.tool_choice == "required":
-        logger.warning(
-            f"Setting tool choice to 'required' for judge evaluation, overriding '{judge_config.tool_choice}'"
-        )
+    tool_choice = judge_config.tool_choice
+    if tool_choice != "required":
         judge_config.tool_choice = "required"
+        logger.warning(
+            f"Setting tool choice to 'required' for judge evaluation, overriding '{tool_choice}'"
+        )
 
     def group_predictions(predictions: list) -> dict:
         grouped: dict = {}
@@ -457,3 +458,6 @@ def evaluate_with_judge(
         ratio = summary["ratio"]
         count = summary["count"]
         logger.info(f"{pred_file}: {ratio:.2%} ({count})")
+
+    # reset tool choice to original
+    judge_config.tool_choice = tool_choice

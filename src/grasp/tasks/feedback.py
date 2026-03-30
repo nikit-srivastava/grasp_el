@@ -1,3 +1,4 @@
+from copy import deepcopy
 from logging import Logger
 from typing import Any
 
@@ -75,14 +76,16 @@ def generate_feedback(
     for msg in messages:
         logger.debug(format_message(msg))
 
-    try:
-        tool_choice = task.config.tool_choice
-        task.config.tool_choice = "required"
+    config = deepcopy(task.config)
+    tool_choice = config.tool_choice
+    if tool_choice != "required":
+        config.tool_choice = "required"
         logger.debug(
             f"Setting tool choice to 'required' for feedback generation (original: '{tool_choice}')"
         )
-        response = call_model(messages, functions(), task.config)
-        task.config.tool_choice = tool_choice
+
+    try:
+        response = call_model(messages, functions(), config)
     except litellm.exceptions.Timeout:
         logger.error("LLM API timed out during feedback generation")
         return None
