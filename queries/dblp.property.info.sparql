@@ -1,0 +1,42 @@
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+
+SELECT DISTINCT ?id ?value ?type WHERE {
+  # Get additional information, such as label, alias, comment, domain, range, type, and superclass
+  {
+    VALUES ?id { {IDS} }
+    ?id rdfs:label ?value
+    BIND("label" AS ?type)
+  } UNION {
+    VALUES ?id { {IDS} }
+    ?id skos:altLabel ?value
+    BIND("alias" AS ?type)
+  } UNION {
+    VALUES ?id { {IDS} }
+    ?id rdfs:comment ?value
+    BIND("info" AS ?type)
+  } UNION {
+    VALUES ?id { {IDS} }
+    ?id rdfs:domain/rdfs:label ?domain
+    BIND(CONCAT("has domain ", ?domain) AS ?value)
+    BIND("info" AS ?type)
+  } UNION {
+    VALUES ?id { {IDS} }
+    ?id rdfs:range/rdfs:label ?range
+    BIND(CONCAT("has range ", ?range) AS ?value)
+    BIND("info" AS ?type)
+  } UNION {
+    VALUES ?id { {IDS} }
+    ?id rdf:type/rdfs:label ?typ
+    BIND(CONCAT("is a ", ?typ) AS ?value)
+    BIND("info" AS ?type)
+  } UNION {
+    VALUES ?id { {IDS} }
+    ?id rdfs:subPropertyOf/rdfs:label ?superproperty
+    BIND(CONCAT("is subproperty of ", ?superproperty) AS ?value)
+    BIND("info" AS ?type)
+  }
+}
+ORDER BY ?id ?type ?value
