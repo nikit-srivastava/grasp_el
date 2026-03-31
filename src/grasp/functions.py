@@ -28,7 +28,7 @@ from grasp.sparql.utils import (
     parse_string,
     wrap_iri,
 )
-from grasp.utils import FunctionCallException
+from grasp.utils import FunctionCallException, format_list
 
 if TYPE_CHECKING:
     from grasp.tasks.base import GraspTask
@@ -683,14 +683,23 @@ def check_known(manager: KgManager, sparql: str, known: set[str]):
             in_query.add(identifier)
 
     unknown_in_query = in_query - known
-    if unknown_in_query:
-        not_seen = "\n".join(manager.format_iri(iri) for iri in unknown_in_query)
-        raise FunctionCallException(f"""\
+    if not unknown_in_query:
+        return
+
+    not_seen = []
+    for iri in unknown_in_query:
+        short_iri = manager.format_iri(iri)
+        if short_iri == iri:
+            not_seen.append(iri)
+        else:
+            not_seen.append(f"{iri} ({short_iri})")
+
+    raise FunctionCallException(f"""\
 The following knowledge graph items are used in the SPARQL query \
 without being known from previous function call results. \
 This does not mean they are invalid, but you should verify \
 that they indeed exist in the knowledge graphs before trying again:
-{not_seen}""")
+{format_list(not_seen)}""")
 
 
 def update_known_from_iris(
@@ -859,11 +868,7 @@ def execute_sparql(
 
 def verify_iri_or_literal(input: str, position: str, manager: KgManager) -> str | None:
     # parse and resolve percent encoding in IRIs
-    binding = parse_into_binding(
-        input,
-        manager.iri_literal_parser,
-        manager.prefixes,
-    )
+    binding = parse_into_binding(input, manager.iri_literal_parser, manager.prefixes)
 
     if binding is None and has_scheme(input):
         # fallback for full IRIs given without angle brackets
