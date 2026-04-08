@@ -20,6 +20,7 @@ from grasp.manager.utils import (
     format_index_meta,
     get_common_sparql_prefixes,
     get_embedding_model_key,
+    merge_prefixes,
     load_embedding_model,
     load_image_from_url,
     load_kg_indices,
@@ -91,12 +92,14 @@ class KgManager:
         self.entity_normalizer = entity_normalizer
         self.property_normalizer = property_normalizer
 
+        self.logger = get_logger(f"{self.kg.upper()} KG MANAGER")
+
         self.sparql_parser = load_sparql_parser()
         self.iri_literal_parser = load_iri_and_literal_parser()
 
-        self.prefixes = get_common_sparql_prefixes()
-        self.kg_prefixes = prefixes or {}
-        self.prefixes.update(self.kg_prefixes)
+        self.prefixes, _, self.kg_prefixes = merge_prefixes(
+            get_common_sparql_prefixes(), prefixes or {}, self.logger
+        )
 
         self.entity_info_sparql = entity_info_sparql or load_entity_info_sparql()
         self.property_info_sparql = property_info_sparql or load_property_info_sparql()
@@ -108,8 +111,6 @@ class KgManager:
         self.description = description
 
         self.embedding_models: dict[str, EmbeddingModel] = {}
-
-        self.logger = get_logger(f"{self.kg.upper()} KG MANAGER")
 
     def load_models(
         self,
@@ -318,7 +319,6 @@ class KgManager:
     def fix_prefixes(
         self,
         sparql: str,
-        is_prefix: bool = False,
         remove_known: bool = False,
         sort: bool = False,
     ) -> str:
@@ -327,7 +327,6 @@ class KgManager:
             self.sparql_parser,
             self.iri_literal_parser,
             self.prefixes,
-            is_prefix,
             remove_known,
             sort,
         )
@@ -840,7 +839,7 @@ def load_kg_manager(
         )
         indices = load_other_indices(cfg.kg, cfg.indices)
 
-    prefixes, description = load_kg_info(cfg.kg, cfg.endpoint)
+    prefixes, description = load_kg_info(cfg.kg)
     ent_norm, prop_norm = load_kg_normalizers(cfg.kg)
     ent_info_sparql, prop_info_sparql = load_kg_info_sparqls(cfg.kg)
 

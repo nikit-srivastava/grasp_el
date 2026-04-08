@@ -1,5 +1,6 @@
 import json
 import os
+from importlib import resources
 from typing import Any, Callable, Iterable, TypeVar
 
 from pydantic import BaseModel
@@ -38,7 +39,7 @@ class FunctionCallException(Exception):
 
 def format_prefixes(prefixes: dict[str, str], indent: int = 0) -> str:
     if not prefixes:
-        return "No prefixes available"
+        return "None"
 
     return format_list(
         (f"{short}: {long}" for short, long in sorted(prefixes.items())),
@@ -319,3 +320,8 @@ def ordered_unique(
         unique.append(item)
 
     return unique
+
+
+def read_resource(package: str, resource: str) -> str:
+    with resources.files(package).joinpath(resource).open() as f:
+        return f.read()

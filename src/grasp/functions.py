@@ -835,8 +835,6 @@ def execute_sparql(
     for other in others:
         sparql = other.fix_prefixes(sparql)
 
-    sparql = manager.prettify(sparql)
-
     if know_before_use and known is not None:
         check_known(manager, sparql, known)
 

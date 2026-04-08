@@ -102,7 +102,7 @@ def evaluate_f1(
 
     sparql_parser = load_sparql_parser()
     iri_literal_parser = load_iri_and_literal_parser()
-    prefixes, _ = load_kg_info(kg, endpoint)
+    prefixes, _ = load_kg_info(kg)
 
     def fix(sparql: str) -> str | None:
         if not fix_prefixes:

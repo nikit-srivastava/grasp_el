@@ -12,6 +12,7 @@ from universal_ml_utils.configuration import load_config
 from universal_ml_utils.io import (
     dump_json,
     dump_jsonl,
+    dump_text,
     load_jsonl,
     load_text,
 )
@@ -43,6 +44,7 @@ from grasp.tasks.examples import load_example_indices, task_to_index
 from grasp.utils import (
     format_trace,
     get_available_knowledge_graphs,
+    get_index_dir,
     is_invalid_output,
     parse_parameters,
 )
@@ -534,6 +536,13 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Knowledge graph to configure (required if config has multiple KGs)",
     )
+    auto_setup_parser.add_argument(
+        "-n",
+        "--notes",
+        type=str,
+        default=None,
+        help="User notes to guide the setup (e.g. 'make sure to cover both English and Spanish')",
+    )
 
     # visualize trace from GRASP output
     show_parser = subparsers.add_parser(
@@ -825,8 +834,7 @@ def auto_setup_grasp(args: argparse.Namespace) -> None:
     output = consume_generator(
         generate(
             "auto-setup",
-            # input must be None
-            None,
+            args.notes,
             config,
             [manager],
             kg_notes,
@@ -835,7 +843,30 @@ def auto_setup_grasp(args: argparse.Namespace) -> None:
         )
     )
 
-    print(json.dumps(output))
+    output = output.get("output")
+    if output is None:
+        logger.error("Auto-setup did not produce output")
+        return
+
+    # save outputs to KG index directory
+    index_dir = get_index_dir(output["kg"])
+
+    for index in ["entities", "properties"]:
+        for typ, sparql in output[index].items():
+            if sparql is None:
+                continue
+
+            path = os.path.join(index_dir, index, f"{typ}.sparql")
+            dump_text(sparql, path)
+            logger.info(f"Saved {index} {typ} SPARQL to {path}")
+
+    path = os.path.join(index_dir, "info.json")
+    dump_json(
+        {"description": output["description"], "prefixes": output["prefixes"]},
+        path,
+        indent=2,
+    )
+    logger.info(f"Saved prefixes and description to {path}")
 
 
 def main():

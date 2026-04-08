@@ -12,13 +12,12 @@ from grasp.tasks.wikidata_query_logs import WdqlTask
 
 
 # official tasks supported by GRASP, excluding exploration
-# which is a special task for note taking
+# and auto-setp which are special tasks
 class Task(StrEnum):
     SPARQL_QA = "sparql-qa"
     GENERAL_QA = "general-qa"
     CEA = "cea"
     WDQL = "wikidata-query-logs"
-    AUTO_SETUP = "auto-setup"
 
 
 _REGISTRY: dict[str, type[GraspTask]] = {

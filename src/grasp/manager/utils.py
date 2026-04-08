@@ -231,10 +231,7 @@ def load_kg_normalizers(kg: str) -> tuple[Normalizer, Normalizer]:
     return ent_normalizer, prop_normalizer
 
 
-def load_kg_info(
-    kg: str,
-    endpoint: str | None = None,
-) -> tuple[dict[str, str], str | None]:
+def load_kg_info(kg: str) -> tuple[dict[str, str], str | None]:
     logger = get_logger(f"{kg.upper()} INFO LOADING")
     kg_index_dir = get_index_dir(kg)
     info_file = os.path.join(kg_index_dir, "info.json")
@@ -253,13 +250,6 @@ def load_kg_info(
     if not prefixes and os.path.exists(prefix_file):
         prefixes = load_json(prefix_file)
 
-    # if still no prefixes, try to fetch from QLever endpoint
-    if not prefixes:
-        try:
-            prefixes = load_qlever_prefixes(endpoint or get_endpoint(kg))
-        except Exception:
-            prefixes = {}
-
     # save prefixes back to info.json for future use
     if prefixes and not info.get("prefixes"):
         info["prefixes"] = prefixes
@@ -268,43 +258,18 @@ def load_kg_info(
     # compatibility with IRIs: strip leading < and trailing >
     prefixes = {k: v.lstrip("<").rstrip(">") for k, v in prefixes.items()}
 
-    common_prefixes = get_common_sparql_prefixes()
-    reverse_prefixes = {v: k for k, v in prefixes.items()}
+    # remove prefixes that conflict with or duplicate common prefixes
+    _, _, kg_prefixes = merge_prefixes(get_common_sparql_prefixes(), prefixes, logger)
 
-    # strip prefixes already covered by the common prefixes
-    for short, long in common_prefixes.items():
-        if short in prefixes:
-            # name clash, prefer common prefix
-            if long != prefixes[short]:
-                # warn only if prefixes differ, otherwise it's just redundant information
-                logger.warning(
-                    f'Prefix "{short}" is defined both in common prefixes ({long}) '
-                    f"and KG-specific prefixes ({prefixes[short]}), but different. "
-                    "The common prefix will be kept and the KG-specific prefix will be ignored. "
-                    "Note that this may lead to unexpected behavior if the KG-specific prefix is "
-                    "actually used in the KG. Please rename or remove the KG-specific prefix."
-                )
-            prefixes.pop(short)
-        elif long in reverse_prefixes and reverse_prefixes[long] in prefixes:
-            # already covered by common prefix, remove it
-            logger.warning(
-                f'{long} is already covered by common prefix "{short}". '
-                f'The KG-specific prefix "{reverse_prefixes[long]}" will be ignored.'
-            )
-            prefixes.pop(reverse_prefixes[long])
-
-    return prefixes, description
+    return kg_prefixes, description
 
 
-def load_kg_index_sparqls(kg: str) -> tuple[str, str]:
+def load_kg_index_sparqls(kg: str) -> tuple[str | None, str | None]:
     logger = get_logger(f"{kg.upper()} INDEX SPARQL LOADING")
     kg_index_dir = get_index_dir(kg)
     ent_index = load_index_sparql(os.path.join(kg_index_dir, "entities"), logger)
     prop_index = load_index_sparql(os.path.join(kg_index_dir, "properties"), logger)
-    return (
-        ent_index or load_entity_index_sparql(),
-        prop_index or load_property_index_sparql(),
-    )
+    return (ent_index, prop_index)
 
 
 def load_kg_info_sparqls(kg: str) -> tuple[str | None, str | None]:
@@ -331,6 +296,57 @@ def load_kg_indices(
     ent_index = load_entity_index(kg, entities_type)
     prop_index = load_property_index(kg, properties_type)
     return ent_index, prop_index
+
+
+def merge_prefixes(
+    first: dict[str, str],
+    second: dict[str, str],
+    logger: logging.Logger | None = None,
+    do_raise: bool = False,
+) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+    # merge second into first, returning (merged, first_only, second_only)
+    # conflicts from second are dropped with warning or error
+    reverse_first = {v: k for k, v in first.items()}
+
+    first_only = {}
+    second_only = {}
+    merged = dict(first)
+
+    for short, long in second.items():
+        if short in first:
+            if long != first[short]:
+                # name clash with different IRI
+                msg = (
+                    f'Prefix "{short}" already defined as {first[short]}, '
+                    f"cannot redefine as {long}"
+                )
+                if do_raise:
+                    raise RuntimeError(msg)
+                if logger is not None:
+                    logger.warning(msg)
+            # either way, skip (duplicate or conflict)
+            continue
+
+        if long in reverse_first:
+            # IRI already covered by a different short name
+            msg = (
+                f"{long} is already covered by prefix "
+                f'"{reverse_first[long]}", skipping "{short}"'
+            )
+            if do_raise:
+                raise RuntimeError(msg)
+            if logger is not None:
+                logger.warning(msg)
+            continue
+
+        merged[short] = long
+        second_only[short] = long
+
+    for short, long in first.items():
+        if short not in second:
+            first_only[short] = long
+
+    return merged, first_only, second_only
 
 
 def get_common_sparql_prefixes() -> dict[str, str]:

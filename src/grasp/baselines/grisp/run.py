@@ -639,10 +639,9 @@ def select_iris_left_to_right(
             "variant": variant,
         }
 
-    # convert back to sparql, fix prefixes, and prettify
+    # convert back to sparql and fix prefixes
     sparql = skeleton.materialize()
-    sparql = manager.fix_prefixes(sparql)
-    return manager.prettify(sparql)
+    return manager.fix_prefixes(sparql)
 
 
 def generate(

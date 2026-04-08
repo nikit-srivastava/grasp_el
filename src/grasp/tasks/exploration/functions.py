@@ -113,7 +113,8 @@ def check_note(note: str, max_note_length: int) -> None:
 
 def show_notes(notes: list[str]) -> str:
     if not notes:
-        return "No notes available"
+        return "None"
+
     return format_enumerate(notes)
 
 

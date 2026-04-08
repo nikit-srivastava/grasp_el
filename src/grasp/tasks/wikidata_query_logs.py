@@ -4,7 +4,13 @@ from grasp.configs import GraspConfig
 from grasp.functions import ExecutionResult
 from grasp.manager import KgManager
 from grasp.model import Message, Response
-from grasp.sparql.utils import find, find_all, parse_string, parse_to_string
+from grasp.sparql.utils import (
+    find,
+    find_all,
+    parse_string,
+    parse_to_string_with_whitespace,
+    remove_node,
+)
 from grasp.tasks.base import GraspTask
 from grasp.tasks.utils import format_sparql_result, prepare_sparql_result
 from grasp.utils import format_list
@@ -99,15 +105,15 @@ def remove_service(manager: KgManager, sparql: str) -> str:
 
         iri = find(var_or_iri, "IRIREF")
         if iri is not None and iri["value"] == "<http://wikiba.se/ontology#label>":
-            service.pop("children")
+            remove_node(service)
             continue
 
         pname = find(var_or_iri, "PNAME_LN")
         if pname is not None and pname["value"] == "wikibase:label":
-            service.pop("children")
+            remove_node(service)
             continue
 
-    return parse_to_string(parse)
+    return parse_to_string_with_whitespace(parse, sparql.encode())
 
 
 def remove_unused_variables(manager: KgManager, sparql: str) -> str:
@@ -129,9 +135,9 @@ def remove_unused_variables(manager: KgManager, sparql: str) -> str:
         val = children[0]["children"][0]["value"]
         # keep Label variables from service clauses
         if val not in used and not val.endswith("Label"):
-            var.pop("children")
+            remove_node(var)
 
-    return parse_to_string(parse)
+    return parse_to_string_with_whitespace(parse, sparql.encode())
 
 
 def clean_sparql(sparql: str, managers: list[KgManager]) -> str:
@@ -139,6 +145,7 @@ def clean_sparql(sparql: str, managers: list[KgManager]) -> str:
     manager = managers[0]
     sparql = remove_service(manager, sparql)
     sparql = remove_unused_variables(manager, sparql)
+    sparql = manager.prettify(sparql)
     return sparql
 
 
@@ -165,7 +172,6 @@ def prepare_sparql(
     if remove_known:
         try:
             result.sparql = manager.fix_prefixes(result.sparql, remove_known=True)
-            result.sparql = manager.prettify(result.sparql)
         except Exception:
             pass
 

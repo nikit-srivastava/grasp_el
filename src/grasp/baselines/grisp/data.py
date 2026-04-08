@@ -808,11 +808,7 @@ def main(args: argparse.Namespace) -> None:
         sample = SparqlQaSample(**sample)
 
         try:
-            sparql = manager.fix_prefixes(
-                sample.sparql,
-                remove_known=True,
-            )
-            sparql = manager.prettify(sparql)
+            sparql = manager.fix_prefixes(sample.sparql, remove_known=True)
             sparql, items = extract_sparql_items(sparql, manager)
 
             invalid_items = [

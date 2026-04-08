@@ -2,7 +2,6 @@ import json
 import time
 import uuid
 from copy import deepcopy
-from importlib import resources
 from typing import Any, Iterator
 from urllib.parse import urlparse, urlunparse
 
@@ -11,6 +10,7 @@ from grammar_utils.parse import LR1Parser  # type: ignore
 from requests.exceptions import JSONDecodeError
 
 from grasp.sparql.types import AskResult, Binding, Position, SelectResult
+from grasp.utils import read_resource
 
 # default request timeout
 # 6 seconds for establishing a connection, 30 seconds for processing query
@@ -35,8 +35,8 @@ class SPARQLException(Exception):
 
 
 def load_sparql_grammar() -> tuple[str, str]:
-    sparql_grammar = resources.read_text("grasp.sparql.grammar", "sparql.y")
-    sparql_lexer = resources.read_text("grasp.sparql.grammar", "sparql.l")
+    sparql_grammar = read_resource("grasp.sparql.grammar", "sparql.y")
+    sparql_lexer = read_resource("grasp.sparql.grammar", "sparql.l")
     return sparql_grammar, sparql_lexer
 
 
@@ -46,8 +46,8 @@ def load_sparql_parser() -> LR1Parser:
 
 
 def load_iri_and_literal_grammar() -> tuple[str, str]:
-    il_grammar = resources.read_text("grasp.sparql.grammar", "iri_literal.y")
-    il_lexer = resources.read_text("grasp.sparql.grammar", "iri_literal.l")
+    il_grammar = read_resource("grasp.sparql.grammar", "iri_literal.y")
+    il_lexer = read_resource("grasp.sparql.grammar", "iri_literal.l")
     return il_grammar, il_lexer
 
 
@@ -200,6 +200,28 @@ def parse_to_string(parse: dict) -> str:
     return _flatten(parse)
 
 
+def parse_to_string_with_whitespace(parse: dict, encoded: bytes) -> str:
+    # rebuild string from parse tree, preserving original whitespace
+    # between terminals using byte_span from the encoded input
+    parts = []
+    pos = 0
+    for terminal in find_terminals(parse):
+        byte_span = terminal.get("byte_span")
+        if byte_span is not None:
+            start, end = byte_span
+            # copy original bytes (whitespace) between previous and this terminal
+            parts.append(encoded[pos:start].decode(errors="replace"))
+            pos = end
+        elif parts:
+            # newly created terminal without byte_span, add a space separator
+            parts.append(" ")
+        parts.append(terminal["value"])
+    # copy any remaining bytes after the last terminal
+    if pos < len(encoded):
+        parts.append(encoded[pos:].decode(errors="replace"))
+    return "".join(parts)
+
+
 def parse_string(
     input: str,
     parser: LR1Parser,
@@ -265,6 +287,34 @@ def find_terminals(parse: dict) -> Iterator[dict]:
             yield from find_terminals(child)
 
 
+def span(parse: dict) -> tuple[int, int] | None:
+    min = max = None
+    for terminal in find_terminals(parse):
+        span = terminal.get("byte_span")
+        if span is None:
+            continue
+
+        if min is None or span[0] < min:
+            min = span[0]
+        if max is None or span[1] > max:
+            max = span[1]
+
+    if min is not None and max is not None:
+        return min, max
+    else:
+        return None
+
+
+def remove_node(node: dict) -> None:
+    # remove a node from the parse tree while preserving its byte span,
+    # so that parse_to_string_with_whitespace skips the original bytes
+    s = span(node)
+    node.pop("children", None)
+    if s is not None:
+        node["value"] = ""
+        node["byte_span"] = s
+
+
 def normalize(sparql: str, parser: LR1Parser, is_prefix: bool = False) -> str:
     # normalize SPARQL by changing variable names to ?v1, ?v2, ...
     parse, rest = parse_string(
@@ -294,14 +344,6 @@ def autocomplete_prefix(
     parser: LR1Parser,
     limit: int | None = None,
 ) -> tuple[str, str, Position]:
-    """
-    Autocomplete the SPARQL prefix by running
-    it against the SPARQL grammar parser.
-    Assumes the prefix is somewhere in a triple block.
-    Optionally add a LIMIT clause to the query.
-    Returns the full SPARQL query and the current position
-    in the query triple block (subject, property, object).
-    """
     # autocomplete by adding 1 to 3 variables to the query,
     # completing and then parsing it to find the current position
     # in the query triple block
@@ -485,14 +527,12 @@ def fix_prefixes(
     sparql_parser: LR1Parser,
     iri_parser: LR1Parser,
     prefixes: dict[str, str],
-    is_prefix: bool = False,
     remove_known: bool = False,
     sort: bool = False,
 ) -> str:
     parse, rest = parse_string(
-        sparql + " " * is_prefix,
+        sparql,
         sparql_parser,
-        is_prefix=is_prefix,
     )
 
     reverse_prefixes = {long: short for short, long in prefixes.items()}
@@ -567,13 +607,20 @@ def fix_prefixes(
     if sort:
         updated_prologue.sort(key=lambda pfx: pfx["children"][1]["value"])
 
+    # build prologue string with newline-separated prefix declarations
+    prologue_str = "\n".join(parse_to_string(decl) for decl in updated_prologue)
+
+    # remove original prologue from tree so it's not included in body reconstruction
+    encoded = sparql.encode()
     prologue = find(parse, "Prologue")
     if prologue:
-        prologue["children"] = updated_prologue
-    else:
-        parse = {"name": "Prologue", "children": updated_prologue}
+        remove_node(prologue)
 
-    return (parse_to_string(parse) + rest).strip()
+    # rebuild body preserving original whitespace
+    body = parse_to_string_with_whitespace(parse, encoded)
+
+    result = prologue_str.strip() + "\n" + body.strip()
+    return (result + rest).strip()
 
 
 def prettify(
@@ -661,25 +708,6 @@ def prettify(
         s = s.rstrip()
 
     return (s.strip() + " " + rest).strip()
-
-
-def set_limit(sparql: str, parser: LR1Parser, limit: int) -> str:
-    parse, _ = parse_string(sparql, parser)
-    limit_clause = find(parse, "LimitClause", skip={"SubSelect"})
-    if limit_clause is None:
-        return sparql
-
-    limit_clause["children"] = [
-        {
-            "name": "LIMIT",
-            "value": "LIMIT",
-        },
-        {
-            "name": "INTEGER",
-            "value": str(limit),
-        },
-    ]
-    return parse_to_string(parse)
 
 
 class SPARQLExecuteException(SPARQLException):
@@ -926,16 +954,16 @@ def load_qlever_prefixes(endpoint: str) -> dict[str, str]:
 
 
 def load_entity_index_sparql() -> str:
-    return resources.read_text("grasp.sparql.queries", "entity.index.sparql").strip()
+    return read_resource("grasp.sparql.queries", "entity.index.sparql")
 
 
 def load_property_index_sparql() -> str:
-    return resources.read_text("grasp.sparql.queries", "property.index.sparql").strip()
+    return read_resource("grasp.sparql.queries", "property.index.sparql")
 
 
 def load_entity_info_sparql() -> str:
-    return resources.read_text("grasp.sparql.queries", "entity.info.sparql").strip()
+    return read_resource("grasp.sparql.queries", "entity.info.sparql")
 
 
 def load_property_info_sparql() -> str:
-    return resources.read_text("grasp.sparql.queries", "property.info.sparql").strip()
+    return read_resource("grasp.sparql.queries", "property.info.sparql")

@@ -7,6 +7,7 @@ from grasp.model import Message
 from grasp.tasks.base import GraspTask
 from grasp.tasks.exploration.functions import call_function as call_note_function
 from grasp.tasks.exploration.functions import note_functions
+from grasp.tasks.functions import find_frequent, find_frequent_function_definition
 from grasp.utils import format_list, format_notes
 
 
@@ -106,7 +107,10 @@ class ExplorationTask(GraspTask):
         return rules()
 
     def function_definitions(self) -> list[dict]:
-        return note_functions(self.managers)
+        kgs = [m.kg for m in self.managers]
+        return note_functions(self.managers) + [
+            find_frequent_function_definition(kgs),
+        ]
 
     def call_function(
         self,
@@ -117,6 +121,20 @@ class ExplorationTask(GraspTask):
     ) -> str:
         assert isinstance(self.config, NotesConfig)
         assert self.state is not None, "State must be provided for exploration task"
+        if fn_name == "find_frequent":
+            return find_frequent(
+                self.managers,
+                fn_args["kg"],
+                fn_args["position"],
+                fn_args.get("subject"),
+                fn_args.get("property"),
+                fn_args.get("object"),
+                fn_args.get("page", 1),
+                self.config.list_k,
+                known,
+                self.config.sparql_request_timeout,
+                self.config.sparql_read_timeout,
+            )
         return call_note_function(
             self.state.kg_notes,
             self.state.notes,
