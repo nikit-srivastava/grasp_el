@@ -45,7 +45,7 @@ def rules() -> list[str]:
         "Do not ask the user for clarification, neither on the initial input nor on \
 follow-up inputs or feedback. When the task input is incomplete or \
 ambiguous, proceed based on reasonable assumptions.",
-        "Use identifiers and literals returned in function call results directly as given for future \
+        "Use identifiers and literals returned in function call results as is in subsequent \
 function calls. Escaping or encoding special characters might lead to errors and unexpected or empty results.",
         'Do not use "SERVICE wikibase:label { bd:serviceParam wikibase:language ..." \
 in SPARQL queries. It is not SPARQL standard and unsupported by most SPARQL endpoints. \

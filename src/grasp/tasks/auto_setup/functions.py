@@ -1,35 +1,57 @@
 from grasp.manager import KgManager
-from grasp.sparql.utils import (
-    find,
-    find_all,
-    parse_string,
-)
+from grasp.sparql.utils import find, find_all, parse_string
+
+STOP_FUNCTION = {
+    "name": "stop",
+    "description": "Stop the setup process.",
+    "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": False,
+    },
+    "strict": True,
+}
 
 
-def setup_functions() -> list[dict]:
+def set_description_function(description: str) -> dict:
+    return {
+        "name": "set_description",
+        "description": description,
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "description": "The description",
+                },
+            },
+            "required": ["description"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    }
+
+
+def index_functions() -> list[dict]:
     return [
         {
+            "name": "show_setup",
+            "description": "Show the current index and info SPARQL queries for the knowledge graph.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False,
+            },
+            "strict": True,
+        },
+        {
             "name": "set_query",
-            "description": """\
-Set a SPARQL query for building an index or retrieving info for entities or properties.
-
-Index SPARQLs must be SELECT queries returning ?id, ?value, and ?tags variables. \
-?id is the entity/property IRI, ?value is a searchable text field (like a label or \
-alias), and ?tags should be "main" for the primary label. Results should be ordered \
-descending by some score (e.g., frequency or popularity, used for resolving \
-ties in search results) and then by id.
-
-Info SPARQLs must be SELECT queries returning ?id, ?value, and ?type variables, and \
-must contain the placeholder {IDS} (to be replaced with a VALUES clause of \
-entity/property IRIs at query time). ?type should be "label", "alias", or "info".""",
+            "description": "Set the index or info SPARQL query for the knowledge graph",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "index": {
-                        "type": "string",
-                        "enum": ["entity", "property"],
-                        "description": "Whether this query is for entities or properties",
-                    },
                     "type": {
                         "type": "string",
                         "enum": ["index", "info"],
@@ -40,18 +62,39 @@ entity/property IRIs at query time). ?type should be "label", "alias", or "info"
                         "description": "The SPARQL query",
                     },
                 },
-                "required": ["index", "type", "sparql"],
+                "required": ["type", "sparql"],
+                "additionalProperties": False,
+            },
+            "strict": True,
+        },
+        set_description_function(
+            "Set a concise description of what this index contains and how it is built. "
+            "Typically a single sentence is sufficient."
+        ),
+        STOP_FUNCTION,
+    ]
+
+
+def info_functions() -> list[dict]:
+    return [
+        {
+            "name": "show_setup",
+            "description": "Show the current prefixes and description of the knowledge graph.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
                 "additionalProperties": False,
             },
             "strict": True,
         },
         {
-            "name": "set_prefix",
-            "description": """\
-Set a prefix for the knowledge graph, mapping a short prefix name to its full \
-IRI namespace (e.g. "wd" and "http://www.wikidata.org/entity/"). Only knowledge \
-graph specific prefixes need to be set - common prefixes like rdf, rdfs, and \
-xsd are available by default.""",
+            "name": "add_prefix",
+            "description": "Add a new prefix for the knowledge graph, mapping a short "
+            "prefix name to its full IRI namespace (e.g. 'wd' for "
+            "'http://www.wikidata.org/entity/'). Only knowledge graph specific "
+            "prefixes need to be added - common prefixes like rdf, rdfs, and "
+            "xsd are available by default.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -70,33 +113,47 @@ xsd are available by default.""",
             "strict": True,
         },
         {
-            "name": "set_description",
-            "description": "Set a concise description of what the knowledge graph contains. \
-Typically a single sentence about the domain and scope of the knowledge graph is sufficient.",
+            "name": "delete_prefix",
+            "description": "Delete an existing knowledge graph prefix.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "description": {
+                    "short": {
                         "type": "string",
-                        "description": "A concise description of the knowledge graph",
+                        "description": "The short prefix name to delete",
                     },
                 },
-                "required": ["description"],
+                "required": ["short"],
                 "additionalProperties": False,
             },
             "strict": True,
         },
         {
-            "name": "stop",
-            "description": "Stop the setup process.",
+            "name": "update_prefix",
+            "description": "Update the namespace of an existing knowledge graph prefix.",
             "parameters": {
                 "type": "object",
-                "properties": {},
-                "required": [],
+                "properties": {
+                    "short": {
+                        "type": "string",
+                        "description": "The short prefix name to update",
+                    },
+                    "namespace": {
+                        "type": "string",
+                        "description": "The new full IRI namespace",
+                    },
+                },
+                "required": ["short", "namespace"],
                 "additionalProperties": False,
             },
             "strict": True,
         },
+        set_description_function(
+            "Set a concise description of what the knowledge graph contains. "
+            "Typically a single sentence about the domain and scope of the "
+            "knowledge graph is sufficient."
+        ),
+        STOP_FUNCTION,
     ]
 
 

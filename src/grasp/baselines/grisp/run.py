@@ -400,10 +400,8 @@ def find_alternatives(
         position = Position.PROPERTY
 
     if position == Position.PROPERTY:
-        index_name = "property"
         obj_type = ObjType.PROPERTY
     else:
-        index_name = "entity"
         obj_type = ObjType.ENTITY
 
     identifier_map = None
@@ -414,7 +412,7 @@ def find_alternatives(
                 f"with autocompletion SPARQL:\n{autocomp_sparql}"
             )
             identifier_map = manager.get_candidate_ids(
-                index_name,
+                obj_type.index_name,
                 autocomp_sparql,
                 MAX_IRIS,
                 # 6 seconds to execute query, 3 to read result
@@ -434,7 +432,7 @@ def find_alternatives(
         f"Searching with query '{query}' from natural-language IRI in fitting IRIs"
     )
     alternatives = manager.search_index(
-        index_name,
+        obj_type.index_name,
         query,
         cfg.selection_top_k,
         identifier_map,

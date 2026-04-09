@@ -20,7 +20,6 @@ from universal_ml_utils.logging import get_logger, setup_logging
 from universal_ml_utils.ops import consume_generator, extract_field
 
 from grasp.build import build_indices, get_data
-from grasp.build.cache import build_caches
 from grasp.build.data import merge_kgs
 from grasp.configs import (
     GraspConfig,
@@ -460,39 +459,6 @@ def parse_args() -> argparse.Namespace:
     )
     add_overwrite_arg(index_parser)
 
-    # cache infos for knowledge graph
-    cache_parser = subparsers.add_parser(
-        "cache",
-        help="Cache entity and property information for a knowledge graph",
-    )
-    cache_parser.add_argument(
-        "kg",
-        type=str,
-        choices=available_kgs,
-        help="Knowledge graph to cache infos for",
-    )
-    cache_parser.add_argument(
-        "-b",
-        "--batch-size",
-        type=int,
-        default=512,
-        help="Number of items to process in each batch.",
-    )
-    cache_parser.add_argument(
-        "-e",
-        "--endpoint",
-        type=str,
-        default=None,
-        help="SPARQL endpoint to use for querying the knowledge graph.",
-    )
-    cache_parser.add_argument(
-        "--limit",
-        type=int,
-        default=1_000_000,
-        help="Only cache the top N items",
-    )
-    add_overwrite_arg(cache_parser)
-
     # build example index
     example_parser = subparsers.add_parser(
         "examples",
@@ -537,11 +503,16 @@ def parse_args() -> argparse.Namespace:
         help="Knowledge graph to configure (required if config has multiple KGs)",
     )
     auto_setup_parser.add_argument(
-        "-n",
-        "--notes",
+        "--info-notes",
         type=str,
         default=None,
-        help="User notes to guide the setup (e.g. 'make sure to cover both English and Spanish')",
+        help="User notes for the info phase (prefixes and description)",
+    )
+    auto_setup_parser.add_argument(
+        "--index-notes",
+        type=str,
+        default=None,
+        help="User notes for the index phases (entity and property index/info SPARQLs)",
     )
 
     # visualize trace from GRASP output
@@ -830,43 +801,67 @@ def auto_setup_grasp(args: argparse.Namespace) -> None:
         manager, _ = find_manager(managers, args.knowledge_graph)
 
     notes, kg_notes = load_notes(config)
+    kg_dir = get_index_dir(manager.kg)
 
-    output = consume_generator(
-        generate(
-            "auto-setup",
-            args.notes,
-            config,
-            [manager],
-            kg_notes,
-            notes,
-            logger=logger,
+    # run phases sequentially: info first (so prefixes are available),
+    # then entity index, then property index
+    phases = [
+        {"phase": "info", "notes": args.info_notes},
+        {"phase": "index", "name": "entities", "notes": args.index_notes},
+        {"phase": "index", "name": "properties", "notes": args.index_notes},
+    ]
+
+    for phase_input in phases:
+        phase = phase_input["phase"]
+        if phase == "index":
+            phase += f" ({phase_input['name']})"
+
+        logger.info(
+            f"Starting auto-setup {phase} phase for knowledge graph {manager.kg}"
         )
-    )
 
-    output = output.get("output")
-    if output is None:
-        logger.error("Auto-setup did not produce output")
-        return
+        result = consume_generator(
+            generate(
+                "auto-setup",
+                phase_input,
+                config,
+                [manager],
+                kg_notes,
+                notes,
+                logger=logger,
+            )
+        )
 
-    # save outputs to KG index directory
-    index_dir = get_index_dir(output["kg"])
+        output = result.get("output")
+        if output is None:
+            logger.error(f"Auto-setup {phase} phase did not produce output")
+            continue
 
-    for index in ["entities", "properties"]:
-        for typ, sparql in output[index].items():
+        # save outputs to disk
+        if phase == "info":
+            path = os.path.join(kg_dir, "info.json")
+            dump_json(
+                {"description": output["description"], "prefixes": output["prefixes"]},
+                path,
+                indent=2,
+            )
+            logger.info(f"Saved prefixes and description to {path}")
+            continue
+
+        name = phase_input["name"]
+        for typ in ["index", "info"]:
+            sparql = output.get(typ)
             if sparql is None:
                 continue
 
-            path = os.path.join(index_dir, index, f"{typ}.sparql")
+            path = os.path.join(kg_dir, name, f"{typ}.sparql")
             dump_text(sparql, path)
-            logger.info(f"Saved {index} {typ} SPARQL to {path}")
+            logger.info(f"Saved {name} {typ} SPARQL to {path}")
 
-    path = os.path.join(index_dir, "info.json")
-    dump_json(
-        {"description": output["description"], "prefixes": output["prefixes"]},
-        path,
-        indent=2,
-    )
-    logger.info(f"Saved prefixes and description to {path}")
+        if output.get("description") is not None:
+            path = os.path.join(kg_dir, name, "info.json")
+            dump_json({"description": output["description"]}, path, indent=2)
+            logger.info(f"Saved {name} description to {path}")
 
 
 def main():
@@ -896,16 +891,6 @@ def main():
             embedding_device=args.emb_device,
             embedding_batch_size=args.emb_batch_size,
             embedding_dim=args.emb_dim,
-        )
-
-    elif args.command == "cache":
-        build_caches(
-            args.kg,
-            args.endpoint,
-            args.limit,
-            args.batch_size,
-            args.overwrite,
-            args.log_level,
         )
 
     elif args.command == "notes":

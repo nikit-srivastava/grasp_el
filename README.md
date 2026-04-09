@@ -198,10 +198,6 @@ grasp evaluate judge -h
 grasp examples data/benchmark/wikidata/qald10/train.jsonl \
   data/benchmark/wikidata/qald10/train-example-index
 
-# Cache entity and property information for a knowledge graph (speeds up
-# runtime by pre-fetching info SPARQL query results):
-grasp cache wikidata
-
 # Merge data from multiple knowledge graphs into a single combined KG.
 # The first KG is the primary one; entities/properties from subsequent KGs
 # are added to it. For example used to combine language-specific indices

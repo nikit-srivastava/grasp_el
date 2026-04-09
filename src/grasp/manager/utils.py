@@ -15,18 +15,10 @@ from search_rdf.model import (
 )
 from universal_ml_utils.configuration import load_config
 from universal_ml_utils.io import dump_json, load_json, load_text
-from universal_ml_utils.logging import get_logger
 
-from grasp.manager.cache import Cache
 from grasp.manager.normalizer import Normalizer, WikidataPropertyNormalizer
 from grasp.sparql.types import ObjType
-from grasp.sparql.utils import (
-    find_longest_prefix,
-    get_endpoint,
-    load_entity_index_sparql,
-    load_property_index_sparql,
-    load_qlever_prefixes,
-)
+from grasp.sparql.utils import find_longest_prefix
 from grasp.utils import get_index_dir
 
 SearchIndex = KeywordIndex | EmbeddingIndex | FuzzyIndex
@@ -37,8 +29,9 @@ EmbeddingModel = HuggingFaceImageModel | OpenClipModel | SentenceTransformerMode
 class Index:
     description: str
     index: SearchIndex
+    data: Data
     info_sparql: str | None = None
-    cache: Cache | None = None
+    normalizer: Normalizer | None = None
 
 
 def load_data(index_dir: str) -> Data:
@@ -50,14 +43,18 @@ def load_data(index_dir: str) -> Data:
     return data
 
 
-def load_index(index_dir: str, index_type: str) -> SearchIndex | None:
-    logger = get_logger("KG INDEX LOADING")
+def try_load_search_index(
+    index_dir: str,
+    index_type: str,
+    logger: logging.Logger | None = None,
+) -> SearchIndex | None:
     start = time.perf_counter()
 
     try:
         data = load_data(index_dir)
     except Exception as e:
-        logger.warning(f"Failed to load data from {index_dir}: {e}")
+        if logger is not None:
+            logger.warning(f"Failed to load data from {index_dir}: {e}")
         return None
 
     index_dir = os.path.join(index_dir, index_type)
@@ -76,24 +73,18 @@ def load_index(index_dir: str, index_type: str) -> SearchIndex | None:
     try:
         index = index_cls.load(**load_kwargs)
     except Exception as e:
-        logger.warning(f"Failed to load {index_type} index from {index_dir}: {e}")
+        if logger is not None:
+            logger.warning(f"Failed to load {index_type} index from {index_dir}: {e}")
         return None
 
     end = time.perf_counter()
 
-    logger.debug(f"Loading {index_type} index from {index_dir} took {end - start:.2f}s")
+    if logger is not None:
+        logger.debug(
+            f"Loading {index_type} index from {index_dir} took {end - start:.2f}s"
+        )
 
     return index
-
-
-def load_entity_index(kg: str, index_type: str) -> SearchIndex | None:
-    index_dir = os.path.join(get_index_dir(kg), "entities")
-    return load_index(index_dir, index_type)
-
-
-def load_property_index(kg: str, index_type: str) -> SearchIndex | None:
-    index_dir = os.path.join(get_index_dir(kg), "properties")
-    return load_index(index_dir, index_type)
 
 
 def load_index_sparql(
@@ -126,35 +117,33 @@ def load_info_sparql(
     return None
 
 
-def load_info_cache(
+def load_index_description(
     index_dir: str,
     logger: logging.Logger | None = None,
-) -> Cache | None:
-    cache_dir = os.path.join(index_dir, "info.cache", "db")
-    if not os.path.exists(cache_dir):
-        if logger is not None:
-            logger.debug(f"No info cache found at {cache_dir}")
+) -> str | None:
+    info_path = os.path.join(index_dir, "info.json")
+    if not os.path.exists(info_path):
         return None
 
-    try:
-        start = time.perf_counter()
-        cache = Cache.load(cache_dir)
-        end = time.perf_counter()
-        if logger is not None:
-            logger.debug(f"Loaded cache from {cache_dir} in {end - start:.2f}s")
-        return cache
-    except Exception as e:
-        if logger is not None:
-            logger.warning(f"Failed to load cache from {cache_dir}: {e}")
-        return None
+    info = load_json(info_path)
+    desc = info.get("description")
+    if desc and logger is not None:
+        logger.debug(f"Loaded index description from {info_path}")
+    return desc
 
 
-def load_other_indices(kg: str, indices: list[str]) -> dict[str, Index]:
-    logger = get_logger("KG OTHER INDICES LOADING")
+def load_other_indices(
+    kg: str,
+    indices: list[str],
+    logger: logging.Logger | None = None,
+) -> dict[str, Index]:
     base_index_dir = get_index_dir(kg)
     config_path = os.path.join(base_index_dir, "indices.yaml")
     if not os.path.exists(config_path):
-        logger.debug(f"No indices.yaml found at {config_path}, skipping other indices")
+        if logger is not None:
+            logger.debug(
+                f"No indices.yaml found at {config_path}, skipping other indices"
+            )
         return {}
 
     config = load_config(config_path)
@@ -163,12 +152,13 @@ def load_other_indices(kg: str, indices: list[str]) -> dict[str, Index]:
     for cfg in config["indices"]:
         name = cfg["name"]
         if name not in indices:
-            logger.debug(
-                f"Skipping index {name} as it's not in the specified indices list"
-            )
+            if logger is not None:
+                logger.debug(
+                    f"Skipping index {name} as it's not in the specified indices list"
+                )
             continue
 
-        desc = cfg.get("description", "No description provided")
+        desc = cfg.get("description", "No description available")
 
         sub_index_dir = os.path.join(base_index_dir, name)
 
@@ -177,14 +167,12 @@ def load_other_indices(kg: str, indices: list[str]) -> dict[str, Index]:
         if cfg["type"].startswith("embedding"):
             cfg["type"] = "embedding"
 
-        index = load_index(sub_index_dir, cfg["type"])
+        index = try_load_search_index(sub_index_dir, cfg["type"], logger)
         if index is None:
             continue
 
         info_sparql = load_info_sparql(sub_index_dir, logger)
-        info_cache = load_info_cache(sub_index_dir, logger)
-
-        others[name] = Index(desc, index, info_sparql, info_cache)
+        others[name] = Index(desc, index, index.data(), info_sparql)
 
     return others
 
@@ -231,8 +219,10 @@ def load_kg_normalizers(kg: str) -> tuple[Normalizer, Normalizer]:
     return ent_normalizer, prop_normalizer
 
 
-def load_kg_info(kg: str) -> tuple[dict[str, str], str | None]:
-    logger = get_logger(f"{kg.upper()} INFO LOADING")
+def load_kg_info(
+    kg: str,
+    logger: logging.Logger | None = None,
+) -> tuple[dict[str, str], str | None]:
     kg_index_dir = get_index_dir(kg)
     info_file = os.path.join(kg_index_dir, "info.json")
     prefix_file = os.path.join(kg_index_dir, "prefixes.json")
@@ -259,43 +249,13 @@ def load_kg_info(kg: str) -> tuple[dict[str, str], str | None]:
     prefixes = {k: v.lstrip("<").rstrip(">") for k, v in prefixes.items()}
 
     # remove prefixes that conflict with or duplicate common prefixes
-    _, _, kg_prefixes = merge_prefixes(get_common_sparql_prefixes(), prefixes, logger)
+    _, _, kg_prefixes = merge_prefixes(
+        get_common_sparql_prefixes(),
+        prefixes,
+        logger,
+    )
 
     return kg_prefixes, description
-
-
-def load_kg_index_sparqls(kg: str) -> tuple[str | None, str | None]:
-    logger = get_logger(f"{kg.upper()} INDEX SPARQL LOADING")
-    kg_index_dir = get_index_dir(kg)
-    ent_index = load_index_sparql(os.path.join(kg_index_dir, "entities"), logger)
-    prop_index = load_index_sparql(os.path.join(kg_index_dir, "properties"), logger)
-    return (ent_index, prop_index)
-
-
-def load_kg_info_sparqls(kg: str) -> tuple[str | None, str | None]:
-    logger = get_logger(f"{kg.upper()} INFO SPARQL LOADING")
-    kg_index_dir = get_index_dir(kg)
-    ent_info = load_info_sparql(os.path.join(kg_index_dir, "entities"), logger)
-    prop_info = load_info_sparql(os.path.join(kg_index_dir, "properties"), logger)
-    return ent_info, prop_info
-
-
-def load_kg_info_caches(kg: str) -> tuple[Cache | None, Cache | None]:
-    logger = get_logger(f"{kg.upper()} INFO CACHE LOADING")
-    kg_index_dir = get_index_dir(kg)
-    ent_cache = load_info_cache(os.path.join(kg_index_dir, "entities"), logger)
-    prop_cache = load_info_cache(os.path.join(kg_index_dir, "properties"), logger)
-    return ent_cache, prop_cache
-
-
-def load_kg_indices(
-    kg: str,
-    entities_type: str,
-    properties_type: str,
-) -> tuple[SearchIndex | None, SearchIndex | None]:
-    ent_index = load_entity_index(kg, entities_type)
-    prop_index = load_property_index(kg, properties_type)
-    return ent_index, prop_index
 
 
 def merge_prefixes(

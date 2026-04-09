@@ -41,13 +41,9 @@ def system_instructions(
 ) -> str:
     index_types = set()
     for manager in managers:
-        if manager.entity_index is not None:
-            index_types.add(manager.entity_index.index_type)
-        if manager.property_index is not None:
-            index_types.add(manager.property_index.index_type)
-
-        for sub in manager.indices.values():
-            index_types.add(sub.index.index_type)
+        for idx in manager.indices.values():
+            if idx.index is not None:
+                index_types.add(idx.index.index_type)
 
     index_infos = []
     for index_type in sorted(index_types):
@@ -161,11 +157,11 @@ def generate(
 
     task = get_task(task_name, managers, config)
 
-    # setup functions
-    fns = kg_functions(managers, config.fn_set)
-    fns.extend(task.function_definitions())
-
     input = task.setup(input)
+
+    # setup functions (after setup so tasks can configure based on input)
+    fns = kg_functions(managers, config.fn_set, config.list_k)
+    fns.extend(task.function_definitions())
     yield {"type": "input", "input": input}
 
     feedback_notes = notes

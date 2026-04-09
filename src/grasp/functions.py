@@ -1,4 +1,5 @@
 import math
+import time
 from dataclasses import dataclass
 from itertools import chain
 from typing import TYPE_CHECKING, Any, Iterable
@@ -37,19 +38,13 @@ if TYPE_CHECKING:
 # maximum number of results for constraining with sub indices
 MAX_RESULTS = 131072
 
-
-def _has_modality(managers: list[KgManager], modality: str) -> bool:
-    for manager in managers:
-        for name in manager.index_names:
-            index = manager.get_index(name)
-            if isinstance(index, EmbeddingIndex):
-                modalities = index.modality or ["text"]
-                if modality in modalities:
-                    return True
-    return False
+MODALITY_QUERY_TYPES = {
+    "text": [("text", "textual search query")],
+    "image": [("image", "URL pointing to an image")],
+}
 
 
-def kg_functions(managers: list[KgManager], fn_set: str) -> list[dict]:
+def kg_functions(managers: list[KgManager], fn_set: str, list_k: int) -> list[dict]:
     assert fn_set in [
         "base",
         "search",
@@ -60,17 +55,20 @@ def kg_functions(managers: list[KgManager], fn_set: str) -> list[dict]:
     ], f"Unknown function set {fn_set}"
     kgs = [manager.kg for manager in managers]
 
-    # collect all available index names across managers
-    all_index_names: list[str] = []
-    seen = set()
+    known_indices = set()
+    known_modalities = set()
     for manager in managers:
-        for name in manager.index_names:
-            if name not in seen:
-                all_index_names.append(name)
-                seen.add(name)
+        known_indices.update(manager.index_names)
 
-    # check if any index supports image queries
-    has_image = _has_modality(managers, "image")
+        for idx in manager.indices.values():
+            if not isinstance(idx.index, EmbeddingIndex):
+                continue
+            known_modalities.update(idx.index.modality)
+
+    assert all(mod in MODALITY_QUERY_TYPES for mod in known_modalities), (
+        f"Unknown modality in {known_modalities}"
+    )
+    index_names = sorted(known_indices)
 
     fns = [
         {
@@ -108,9 +106,10 @@ execute(kg="wikidata", sparql="SELECT ?job WHERE { wd:Q937 wdt:P106 ?job }")""",
     fns.append(
         {
             "name": "list",
-            "description": """\
+            "description": f"""\
 List triples from the knowledge graph satisfying the given subject, property, \
-and object constraints.
+and object constraints. At most {list_k} results are returned per page (use \
+pagintion to see more results).
 
 For example, to find triples with Albert Einstein as the subject in Wikidata, \
 do the following:
@@ -162,8 +161,8 @@ list(kg="wikidata", property="wdt:P19")""",
         },
     )
 
-    has_entity_index = "entity" in seen
-    has_property_index = "property" in seen
+    has_entity_index = "entities" in known_indices
+    has_property_index = "properties" in known_indices
 
     if fn_set in ["search", "search_extended", "all"]:
         search_entity_props = {
@@ -191,17 +190,6 @@ list(kg="wikidata", property="wdt:P19")""",
             },
         }
         search_property_required = ["kg", "query"]
-
-        if has_image:
-            query_type_prop = {
-                "type": "string",
-                "enum": ["text", "image"],
-                "description": 'How to interpret the query string. "text" for text search, "image" for an image URL.',
-            }
-            search_entity_props["query_type"] = query_type_prop
-            search_entity_required.append("query_type")
-            search_property_props["query_type"] = dict(query_type_prop)
-            search_property_required.append("query_type")
 
         if has_entity_index:
             fns.append(
@@ -281,17 +269,6 @@ search_property(kg="wikidata", query="birth")""",
         }
         search_obj_of_prop_required = ["kg", "property", "query"]
 
-        if has_image:
-            query_type_prop = {
-                "type": "string",
-                "enum": ["text", "image"],
-                "description": 'How to interpret the query string. "text" for text search, "image" for an image URL.',
-            }
-            search_prop_of_ent_props["query_type"] = query_type_prop
-            search_prop_of_ent_required.append("query_type")
-            search_obj_of_prop_props["query_type"] = dict(query_type_prop)
-            search_obj_of_prop_required.append("query_type")
-
         if has_property_index:
             fns.append(
                 {
@@ -335,7 +312,16 @@ search_object_of_property(kg="wikidata", property="wdt:P106", query="football")"
                 },
             )
 
-    if fn_set in ["search_filter", "all"] and all_index_names:
+    # prepare query type arg
+    query_types = [typ for mod in known_modalities for typ in MODALITY_QUERY_TYPES[mod]]
+    query_type_prop = {
+        "type": "string",
+        "enum": sorted(qt for qt, _ in query_types),
+        "description": "How to interpret the query string: "
+        + ", ".join(f'"{qt}" for {desc}' for qt, desc in query_types),
+    }
+
+    if fn_set in ["search_filter", "all"] and index_names:
         search_filter_props = {
             "kg": {
                 "type": "string",
@@ -344,12 +330,12 @@ search_object_of_property(kg="wikidata", property="wdt:P106", query="football")"
             },
             "index": {
                 "type": "string",
-                "enum": all_index_names,
+                "enum": index_names,
                 "description": "The index to search in",
             },
             "sparql": {
-                "type": "string",
-                "description": "The SPARQL query with ?search variable",
+                "type": ["string", "null"],
+                "description": "The SPARQL query for filtering or null for an unconstrained search",
             },
             "query": {
                 "type": "string",
@@ -358,31 +344,27 @@ search_object_of_property(kg="wikidata", property="wdt:P106", query="football")"
         }
         search_filter_required = ["kg", "index", "sparql", "query"]
 
-        if has_image:
-            search_filter_props["query_type"] = {
-                "type": "string",
-                "enum": ["text", "image"],
-                "description": 'How to interpret the query string. "text" for text search, "image" for an image URL.',
-            }
+        if len(query_types) > 1:
+            search_filter_props["query_type"] = query_type_prop
             search_filter_required.append("query_type")
 
         fns.append(
             {
                 "name": "search_with_filter",
                 "description": """\
-Search for knowledge graph items in a context-sensitive way by specifying a constraining \
+Search for knowledge graph items in a context-sensitive way by specifying filter \
 SPARQL query together with a search query. The SPARQL query must be a SELECT query \
 returning a single column of IRIs. The search is then restricted to knowledge graph items \
 matching those IRIs in the specified index. The index parameter specifies which index to \
-search in ("entity", "property", or any other index name).
+search in. The SPARQL query can be null, in which case a search over the full index is performed.
 
 For example, to search for Albert Einstein at the subject position in \
 Wikidata, do the following:
-search_with_filter(kg="wikidata", index="entity", sparql="SELECT DISTINCT ?s WHERE { ?s ?p ?o }", query="albert einstein")
+search_with_filter(kg="wikidata", index="entities", query="albert einstein")
 
 Or to search for properties of Albert Einstein related to his birth in \
 Wikidata, do the following:
-search_with_filter(kg="wikidata", index="property", sparql="SELECT DISTINCT ?p WHERE { wd:Q937 ?p ?o }", query="birth")""",
+search_with_filter(kg="wikidata", index="properties", sparql="SELECT DISTINCT ?p WHERE { wd:Q937 ?p ?o }", query="birth")""",
                 "parameters": {
                     "type": "object",
                     "properties": search_filter_props,
@@ -393,7 +375,7 @@ search_with_filter(kg="wikidata", index="property", sparql="SELECT DISTINCT ?p W
             }
         )
 
-    if fn_set in ["search_constraints", "all"] and all_index_names:
+    if fn_set in ["search_constraints", "all"] and index_names:
         search_constraints_props = {
             "kg": {
                 "type": "string",
@@ -402,7 +384,7 @@ search_with_filter(kg="wikidata", index="property", sparql="SELECT DISTINCT ?p W
             },
             "index": {
                 "type": "string",
-                "enum": all_index_names,
+                "enum": index_names,
                 "description": "The index to search in",
             },
             "position": {
@@ -443,12 +425,8 @@ search_with_filter(kg="wikidata", index="property", sparql="SELECT DISTINCT ?p W
             "constraints",
         ]
 
-        if has_image:
-            search_constraints_props["query_type"] = {
-                "type": "string",
-                "enum": ["text", "image"],
-                "description": 'How to interpret the query string. "text" for text search, "image" for an image URL.',
-            }
+        if len(query_types) > 1:
+            search_constraints_props["query_type"] = query_type_prop
             search_constraints_required.append("query_type")
 
         fns.append(
@@ -457,16 +435,15 @@ search_with_filter(kg="wikidata", index="property", sparql="SELECT DISTINCT ?p W
                 "description": """\
 Search for knowledge graph items at a particular position (subject, property, or object) \
 with optional constraints. If constraints are provided, they are used to limit the search \
-space accordingly. The index parameter specifies which index to search in ("entity", \
-"property", or any other index name). For position "property", the index must be "property". \
-For positions "subject" or "object", the index can be "entity" or any sub-index name.
+space accordingly. The index parameter specifies which index to search in ("entities", \
+"properties", or any other index name).
 
 For example, to search for the subject Albert Einstein in Wikidata, do the following:
-search_with_constraints(kg="wikidata", index="entity", position="subject", query="albert einstein")
+search_with_constraints(kg="wikidata", index="entities", position="subject", query="albert einstein")
 
 Or to search for properties of Albert Einstein related to his birth in Wikidata, \
 do the following:
-search_with_constraints(kg="wikidata", index="property", position="property", query="birth", \
+search_with_constraints(kg="wikidata", index="properties", position="property", query="birth", \
 constraints={"subject": "wd:Q937"})""",
                 "parameters": {
                     "type": "object",
@@ -554,7 +531,7 @@ def call_function(
         return search_with_constraints(
             managers,
             fn_args["kg"],
-            "property",
+            "properties",
             "property",
             fn_args["query"],
             {"subject": fn_args["entity"]},
@@ -569,7 +546,7 @@ def call_function(
         return search_with_constraints(
             managers,
             fn_args["kg"],
-            "entity",
+            "entities",
             "object",
             fn_args["query"],
             {"property": fn_args["property"]},
@@ -629,7 +606,7 @@ def search_entity(
     manager, _ = find_manager(managers, kg)
 
     alts = manager.search_index(
-        "entity",
+        "entities",
         query=query,
         k=k,
         query_type=query_type,
@@ -637,10 +614,10 @@ def search_entity(
     )
 
     # update known items
-    normalizer = manager.get_normalizer("entity")
+    normalizer = manager.get_normalizer("entities")
     update_known_from_alts(known, alts, normalizer)
 
-    return format_index_alternatives(alts, "entity", k)
+    return format_index_alternatives(alts, "entities", k)
 
 
 def search_property(
@@ -655,7 +632,7 @@ def search_property(
     manager, _ = find_manager(managers, kg)
 
     alts = manager.search_index(
-        "property",
+        "properties",
         query=query,
         k=k,
         query_type=query_type,
@@ -663,10 +640,10 @@ def search_property(
     )
 
     # update known items
-    normalizer = manager.get_normalizer("property")
+    normalizer = manager.get_normalizer("properties")
     update_known_from_alts(known, alts, normalizer)
 
-    return format_index_alternatives(alts, "property", k)
+    return format_index_alternatives(alts, "properties", k)
 
 
 COMMON_PREFIXES = get_common_sparql_prefixes()
@@ -773,14 +750,14 @@ def update_known_from_alternatives(
     update_known_from_alts(
         known,
         alternatives.get(ObjType.ENTITY, []),
-        manager.entity_normalizer,
+        manager.get_normalizer("entities"),
     )
 
     # properties
     update_known_from_alts(
         known,
         alternatives.get(ObjType.PROPERTY, []),
-        manager.property_normalizer,
+        manager.get_normalizer("properties"),
     )
 
     # other
@@ -799,14 +776,14 @@ def update_known_from_selections(
     update_known_from_alts(
         known,
         (sel.alternative for sel in selections if sel.obj_type == ObjType.ENTITY),
-        manager.entity_normalizer,
+        manager.get_normalizer("entities"),
     )
 
     # properties
     update_known_from_alts(
         known,
         (sel.alternative for sel in selections if sel.obj_type == ObjType.PROPERTY),
-        manager.property_normalizer,
+        manager.get_normalizer("properties"),
     )
 
 
@@ -839,7 +816,9 @@ def execute_sparql(
         check_known(manager, sparql, known)
 
     try:
+        start = time.monotonic()
         result = manager.execute_sparql(sparql, request_timeout, read_timeout)
+        end = time.monotonic()
     except Exception as e:
         error = f"SPARQL execution failed:\n{e}"
         return ExecutionResult(sparql, error)
@@ -859,10 +838,10 @@ def execute_sparql(
         )
 
         # entity mapping
-        update_known_from_rows(known, rows, manager.entity_normalizer)
+        update_known_from_rows(known, rows, manager.get_normalizer("entities"))
 
         # property mapping
-        update_known_from_rows(known, rows, manager.property_normalizer)
+        update_known_from_rows(known, rows, manager.get_normalizer("properties"))
 
     formatted = manager.format_sparql_result(
         result,
@@ -870,6 +849,7 @@ def execute_sparql(
         half_rows,
         half_columns,
         half_columns,
+        time=end - start,
     )
     return ExecutionResult(sparql, formatted, result)
 
@@ -967,32 +947,35 @@ SELECT ?s ?p ?o WHERE {{
     result.truncate(MAX_RESULTS)
 
     # functions to get scores for properties and entities
+    prop_index = manager.try_get("properties")
+    ent_index = manager.try_get("entities")
+
     def prop_rank(prop: Binding) -> int:
-        if not manager.property_data:
+        if not prop_index:
             return 0
 
-        norm = manager.property_normalizer.normalize(prop.identifier())
+        norm = manager.get_normalizer("properties").normalize(prop.identifier())
         if norm is None:
-            return len(manager.property_data)
+            return len(prop_index.data)
 
-        id = manager.property_data.id_from_identifier(norm[0])
+        id = prop_index.data.id_from_identifier(norm[0])
         if id is None:
-            return len(manager.property_data)
+            return len(prop_index.data)
 
         # lower id means more popular property
         return id
 
     def ent_rank(ent: Binding) -> int:
-        if not manager.entity_data:
+        if not ent_index or not ent_index.data:
             return 0
 
-        norm = manager.entity_normalizer.normalize(ent.identifier())
+        norm = manager.get_normalizer("entities").normalize(ent.identifier())
         if norm is None:
-            return len(manager.entity_data)
+            return len(ent_index.data)
 
-        id = manager.entity_data.id_from_identifier(norm[0])
+        id = ent_index.data.id_from_identifier(norm[0])
         if id is None:
-            return len(manager.entity_data)
+            return len(ent_index.data)
 
         # lower id means more popular entity
         return id
@@ -1016,14 +999,12 @@ SELECT ?s ?p ?o WHERE {{
         key=lambda item: sort_key(item[1]),
     )
 
-    def normalize_prop(prob: Binding) -> str:
-        identifier = prob.identifier()
-        norm = manager.property_normalizer.normalize(identifier)
-        return norm[0] if norm is not None else identifier
+    prop_norm = manager.get_normalizer("properties")
+    ent_norm = manager.get_normalizer("entities")
 
-    def normalize_ent(ent: Binding) -> str:
-        identifier = ent.identifier()
-        norm = manager.entity_normalizer.normalize(identifier)
+    def normalize(bnd: Binding, normalizer: Normalizer) -> str:
+        identifier = bnd.identifier()
+        norm = normalizer.normalize(identifier)
         return norm[0] if norm is not None else identifier
 
     # now make sure that we show a diverse set of rows
@@ -1035,9 +1016,9 @@ SELECT ?s ?p ?o WHERE {{
 
     for i, row in sorted_rows:
         # normalize
-        s = normalize_ent(row["s"])
-        p = normalize_prop(row["p"])
-        o = normalize_ent(row["o"])
+        s = normalize(row["s"], ent_norm)
+        p = normalize(row["p"], prop_norm)
+        o = normalize(row["o"], ent_norm)
 
         key = (p in probs_seen, s in ents_seen or o in ents_seen)
         permutation.append((key, i))
@@ -1057,8 +1038,8 @@ SELECT ?s ?p ?o WHERE {{
     result.data = result.data[start:end]
 
     # update known
-    update_known_from_rows(known, result.rows(), manager.entity_normalizer)
-    update_known_from_rows(known, result.rows(), manager.property_normalizer)
+    update_known_from_rows(known, result.rows(), ent_norm)
+    update_known_from_rows(known, result.rows(), prop_norm)
 
     return manager.format_sparql_result(
         result,
@@ -1184,7 +1165,7 @@ def search_with_filter(
     managers: list[KgManager],
     kg: str,
     index: str,
-    sparql: str,
+    sparql: str | None,
     query: str,
     k: int,
     known: set[str],
@@ -1196,31 +1177,32 @@ def search_with_filter(
 ) -> str:
     manager, others = find_manager(managers, kg)
 
-    # fix prefixes with managers
-    sparql = manager.fix_prefixes(sparql)
-    for other in others:
-        sparql = other.fix_prefixes(sparql)
-
-    if know_before_use:
-        check_known(manager, sparql, known)
-
     identifier_map = None
     info = ""
-    try:
-        identifier_map = manager.get_candidate_ids(
-            index,
-            sparql,
-            MAX_RESULTS,
-            request_timeout,
-            read_timeout,
-        )
-    except Exception as e:
-        info = f"""\
-Falling back to an unconstrained search on the full \
-search index due to:
-{e}
+    if sparql is not None:
+        # fix prefixes with managers
+        sparql = manager.fix_prefixes(sparql)
+        for other in others:
+            sparql = other.fix_prefixes(sparql)
 
-"""
+        if know_before_use:
+            check_known(manager, sparql, known)
+
+        try:
+            identifier_map = manager.get_candidate_ids(
+                index,
+                sparql,
+                MAX_RESULTS,
+                request_timeout,
+                read_timeout,
+            )
+        except Exception as e:
+            info = f"""\
+    Falling back to an unconstrained search on the full \
+    search index due to:
+    {e}
+
+    """
 
     alternatives = manager.search_index(
         index,

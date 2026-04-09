@@ -108,9 +108,9 @@ class ExplorationTask(GraspTask):
 
     def function_definitions(self) -> list[dict]:
         kgs = [m.kg for m in self.managers]
-        return note_functions(self.managers) + [
-            find_frequent_function_definition(kgs),
-        ]
+        functions = note_functions(self.managers)
+        functions.append(find_frequent_function_definition(kgs, self.config.list_k))
+        return functions
 
     def call_function(
         self,

@@ -245,12 +245,16 @@ def split_at_punctuation(s: str) -> Iterator[str]:
         yield s[start:]
 
 
-def parse_binding(binding: dict) -> tuple[str, str, list[str]]:
+def parse_binding(binding: dict) -> tuple[str, tuple[str, str] | None, list[str]]:
+    assert binding["id"]["type"] == "uri", "Expected id to be a URI"
     id = binding["id"]["value"]
-    value = binding["value"]["value"] if "value" in binding else ""
+    value = None
+    if "value" in binding:
+        value = (binding["value"]["value"], binding["value"]["type"])
 
     tag_binding = binding.get("tag", binding.get("tags", None))
     if tag_binding is not None:
+        assert tag_binding["type"] == "literal", "Expected tags to be a literal"
         tags = tag_binding["value"].split(",")
     else:
         tags = []
@@ -299,8 +303,14 @@ def prepare_items(
             fields = []
 
         last_id = id
-        if value:
-            fields.append({"type": "text", "value": value, "tags": tags})
+        if value is None:
+            continue
+
+        val, typ = value
+        if typ == "uri":
+            val = get_value_from_id(val, prefixes)
+
+        fields.append({"type": "text", "value": val, "tags": tags})
 
     if last_id is None:
         return

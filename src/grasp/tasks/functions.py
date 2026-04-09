@@ -1,5 +1,4 @@
 from grasp.functions import (
-    MAX_RESULTS,
     find_manager,
     format_verification_error,
     update_known_from_rows,
@@ -10,22 +9,20 @@ from grasp.sparql.types import Position, SelectResult
 from grasp.utils import FunctionCallException
 
 
-def find_frequent_function_definition(kgs: list[str]) -> dict:
+def find_frequent_function_definition(kgs: list[str], k: int) -> dict:
     return {
         "name": "find_frequent",
-        "description": """\
-List the most common IRIs or literals at a given position (subject, property, \
-or object) in the knowledge graph, optionally constrained by the other positions. \
-Results are ordered by frequency (descending).
+        "description": f"""\
+List common IRIs or literals at a given position (subject, property, \
+or object) in the knowledge graph for the given constraints. \
+Results are ordered by descending by frequency, and at most {k} \
+results are returned per page (use pagination to see more results).
 
-For example, to find the most common types in the knowledge graph:
-find_frequent(kg="mykg", position="object", property="rdf:type")
+For example, to find the most common types used in Wikidata:
+find_frequent(kg="wikidata", position="object", property="rdf:type")
 
-Or to find the most frequently used properties:
-find_frequent(kg="mykg", position="property")
-
-Or to find the most common properties that link to literals:
-find_frequent(kg="mykg", position="property", literal_objects=true)""",
+Or to find the most frequently used properties in Wikidata:
+find_frequent(kg="wikidata", position="property")""",
         "parameters": {
             "type": "object",
             "properties": {
@@ -116,7 +113,7 @@ SELECT {target_var} (COUNT(*) AS ?freq) WHERE {{
     {triple_pattern} .
 }} GROUP BY {target_var}
 ORDER BY DESC(?freq) {target_var}
-LIMIT {MAX_RESULTS + 1}"""
+LIMIT {page * k}"""
 
     try:
         result = manager.execute_sparql(sparql, request_timeout, read_timeout)
@@ -124,7 +121,6 @@ LIMIT {MAX_RESULTS + 1}"""
         raise FunctionCallException(f"Failed to list common {position} values:\n{e}")
 
     assert isinstance(result, SelectResult)
-    result.truncate(MAX_RESULTS)
 
     # apply pagination
     start = (page - 1) * k
@@ -132,8 +128,8 @@ LIMIT {MAX_RESULTS + 1}"""
     result.data = result.data[start:end]
 
     # update known
-    update_known_from_rows(known, result.rows(), manager.entity_normalizer)
-    update_known_from_rows(known, result.rows(), manager.property_normalizer)
+    update_known_from_rows(known, result.rows(), manager.get_normalizer("entities"))
+    update_known_from_rows(known, result.rows(), manager.get_normalizer("properties"))
 
     return manager.format_sparql_result(
         result,
