@@ -256,7 +256,7 @@ applicable as possible. Notes are limited to {max_note_length} characters to \
 ensure they are concise and to the point.
 
 Examples of potentially useful types of notes include:
-- overall structure, domain converage, and schema of the knowledge graphs
+- overall structure, domain coverage, and schema of the knowledge graphs
 - peculiarities of the knowledge graphs
 - strategies when encountering certain types of questions or errors
 - tips for when and how to use certain functions
