@@ -132,22 +132,6 @@ def prepare_sparql(
     return result, format_sparql_result(manager, result, selections)
 
 
-def input_and_state(
-    sparql: str,
-    managers: list[KgManager],
-    max_rows: int,
-    max_columns: int,
-) -> tuple[str, None]:
-    _, formatted = prepare_sparql(
-        sparql,
-        managers,
-        max_rows,
-        max_columns,
-        remove_known=True,
-    )
-    return formatted, None
-
-
 def output(
     messages: list[Message],
     managers: list[KgManager],
@@ -222,11 +206,12 @@ class SparqlToQuestionTask(GraspTask):
         assert isinstance(input, str), (
             f"Input for {self.name} must be a string (SPARQL query)"
         )
-        formatted, _ = input_and_state(
+        _, formatted = prepare_sparql(
             input,
             self.managers,
             self.config.result_max_rows,
             self.config.result_max_columns,
+            remove_known=True,
         )
         return formatted
 
