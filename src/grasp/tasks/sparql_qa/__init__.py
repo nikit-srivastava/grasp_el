@@ -6,7 +6,7 @@ from pydantic import BaseModel, ValidationError
 
 from grasp.configs import GraspConfig
 from grasp.functions import find_manager
-from grasp.manager import KgManager, format_kg_notes, format_kgs
+from grasp.manager import KgManager, format_kgs
 from grasp.model import Message, ToolCall
 from grasp.tasks.base import FeedbackTask, GraspTask
 from grasp.tasks.sparql_qa.examples import (
@@ -428,13 +428,10 @@ You are a question answering assistant providing feedback on the \
 output of a SPARQL-based question answering system for a given user question.
 
 The following knowledge graphs are available:
-{format_kgs(managers) if managers else "None"}
-
-The following knowledge graph specific notes are available:
-{format_kg_notes(kg_notes) if kg_notes else "None"}
+{format_kgs(managers, kg_notes)}
 
 The following general notes are available:
-{format_notes(notes) if notes else "None"}
+{format_notes(notes)}
 
 The following task specific rules should be followed:
 {format_list(rules()) if rules() else "None"}

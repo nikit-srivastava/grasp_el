@@ -49,7 +49,8 @@ def rules() -> list[str]:
 follow-up inputs or feedback. When the task input is incomplete or \
 ambiguous, proceed based on reasonable assumptions.",
         "Use IRIs returned in function call results as is in subsequent function calls. \
-Escaping or encoding special characters might lead to errors and unexpected or empty results.",
+Shortening them to their prefixed form, and escaping or encoding special characters might \
+lead to errors and unexpected or empty results.",
         'Do not use "SERVICE wikibase:label { bd:serviceParam wikibase:language ..." \
 in SPARQL queries. It is not SPARQL standard and unsupported by most SPARQL endpoints. \
 Use rdfs:label or similar properties to get labels instead.',

@@ -10,7 +10,7 @@ from universal_ml_utils.logging import get_logger
 
 from grasp.configs import GraspConfig
 from grasp.functions import call_function, kg_functions
-from grasp.manager import KgManager, format_kg_notes, format_kgs, load_kg_manager
+from grasp.manager import KgManager, format_kgs, load_kg_manager
 from grasp.manager.utils import (
     EmbeddingModel,
     describe_index_type,
@@ -62,13 +62,7 @@ Types of knowledge graph indices:
         instructions += f"""
 
 Available knowledge graphs:
-{format_kgs(managers)}"""
-
-    if kg_notes:
-        instructions += f"""
-
-Knowledge graph specific notes:
-{format_kg_notes(kg_notes)}"""
+{format_kgs(managers, kg_notes)}"""
 
     if notes:
         instructions += f"""

@@ -6,7 +6,7 @@ from universal_ml_utils.table import generate_table
 
 from grasp.configs import GraspConfig
 from grasp.functions import find_manager
-from grasp.manager import KgManager, format_kg_notes, format_kgs
+from grasp.manager import KgManager, format_kgs
 from grasp.model import Message
 from grasp.sparql.types import Alternative, ObjType
 from grasp.sparql.utils import parse_into_binding
@@ -323,7 +323,9 @@ def prepare_annotation(manager: KgManager, entity: str) -> Annotation:
     if norm is not None:
         identifier, _ = norm
 
-    infos = manager.get_info_for_identifiers_from_index([identifier], ObjType.ENTITY.index_name)
+    infos = manager.get_info_for_identifiers_from_index(
+        [identifier], ObjType.ENTITY.index_name
+    )
     info = infos.get(identifier, {})
 
     label = info.get("label")
@@ -477,13 +479,10 @@ You are a table annotation assistant providing feedback on the \
 output of a table annotation system for a given input table.
 
 The system has access to the following knowledge graphs:
-{format_kgs(managers) if managers else "None"}
-
-The system was provided the following knowledge graph specific notes:
-{format_kg_notes(kg_notes) if kg_notes else "None"}
+{format_kgs(managers, kg_notes)}
 
 The system was provided the following notes across all knowledge graphs:
-{format_notes(notes) if notes else "None"}
+{format_notes(notes)}
 
 The system was provided the following rules to follow:
 {format_list(rules()) if rules() else "None"}

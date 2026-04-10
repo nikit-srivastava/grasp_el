@@ -62,6 +62,7 @@ from grasp.sparql.utils import (
 from grasp.utils import (
     clip,
     format_list,
+    format_notes,
     format_prefixes,
     get_index_dir,
     ordered_unique,
@@ -739,7 +740,7 @@ class KgManager:
 
 DEFAULT_DESCRIPTIONS = {
     "entities": "Entities indexed by their labels and synonyms",
-    "properties": "Properties indexed by their labels, synonyms, and identifiers",
+    "properties": "Properties indexed by their labels, synonyms, and IRIs",
 }
 
 
@@ -830,17 +831,13 @@ def load_kg_manager(
     )
 
 
-def format_kgs(managers: list[KgManager]) -> str:
-    return format_list(format_kg(manager) for manager in managers)
-
-
-def format_kg_notes(kg_notes: dict[str, list[str]]) -> str:
+def format_kgs(managers: list[KgManager], notes: dict[str, list[str]]) -> str:
     return format_list(
-        f'"{kg}":\n{format_list(notes, indent=2)}' for kg, notes in kg_notes.items()
+        format_kg(manager, notes.get(manager.kg)) for manager in managers
     )
 
 
-def format_kg(manager: KgManager) -> str:
+def format_kg(manager: KgManager, notes: list[str] | None = None) -> str:
     msg = f'"{manager.kg}" at {manager.endpoint}'
     if manager.description:
         msg += f": {manager.description}"
@@ -857,5 +854,8 @@ def format_kg(manager: KgManager) -> str:
 
     if manager.kg_prefixes:
         msg += f"\n  SPARQL prefixes:\n{format_prefixes(manager.kg_prefixes, indent=4)}"
+
+    if notes:
+        msg += "\n  Notes:\n" + format_list(notes, indent=4)
 
     return msg

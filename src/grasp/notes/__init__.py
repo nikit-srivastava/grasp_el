@@ -18,7 +18,7 @@ from grasp.configs import (
 )
 from grasp.core import call_model, generate, load_notes, setup
 from grasp.functions import find_manager
-from grasp.manager import KgManager, format_kg_notes
+from grasp.manager import KgManager
 from grasp.model import Message
 from grasp.notes.utils import consume_iterator, format_output, link
 from grasp.tasks import get_task
@@ -313,6 +313,16 @@ def prepare_ground_truths(
     return ground_truths
 
 
+def format_kg_notes(kg_notes: dict[str, list[str]]) -> str:
+    if not kg_notes:
+        return "None"
+
+    return format_list(
+        f'"{kg}":\n{format_notes(notes, indent=2, enumerated=True)}'
+        for kg, notes in kg_notes.items()
+    )
+
+
 def note_taking_instructions(
     kg_notes: dict[str, list[str]],
     notes: list[str],
@@ -351,10 +361,10 @@ be the same notes provided to the agent) based on the given agent traces \
 below.
 
 Knowledge graph specific notes:
-{format_kg_notes(kg_notes) if kg_notes else "None"}
+{format_kg_notes(kg_notes)}
 
 General notes across knowledge graphs:
-{format_notes(notes, enumerated=True) if notes else "None"}
+{format_notes(notes, enumerated=True)}
 
 {fmt}"""
 

@@ -34,13 +34,13 @@ explore knowledge graphs and take notes about them using the \
 provided functions.
 
 You should follow a step-by-step approach to take notes:
-1. Think about what domains the knowledge graphs might cover and what types of \
-questions a user might want to answer with them. Take into account already \
-existing notes to focus on unexplored areas.
-2. Come up with a potential user question over one or more knowledge graphs. \
-Try to build a SPARQL query to answer the question and take notes \
-about your findings along the way. Try to use all of the \
-provided functions during your exploration.
+1. Determine the scope and domain of the knowledge graphs and what types \
+of questions a user might want to answer with them. Look at the current notes \
+and figure out well covered and underexplored areas.
+2. Come up with a potential user question over one or more knowledge graphs, \
+preferably in an underexplored area. Try to build a SPARQL query to answer \
+the question and take notes about your findings along the way. Try to use all \
+of the provided functions during your exploration.
 3. Repeat steps 1 and 2 until you explored at least {config.questions_per_round} \
 different potential user questions or you run out of ideas.
 
@@ -57,22 +57,6 @@ Examples of potentially useful types of notes include:
 - peculiarities of the knowledge graphs
 - strategies when encountering certain types of questions or errors
 - tips for when and how to use certain functions"""
-
-
-def format_state(state: ExplorationState) -> str:
-    kg_specific_notes = format_list(
-        f"{kg}:\n{format_notes(kg_specific_notes, indent=2, enumerated=True)}"
-        for kg, kg_specific_notes in sorted(state.kg_notes.items())
-    )
-    return f"""\
-Explore the available knowledge graphs. Add to, delete from, or update the following \
-notes along the way.
-
-Knowledge graph specific notes:
-{kg_specific_notes}
-
-General notes across knowledge graphs:
-{format_notes(state.notes, enumerated=True)}"""
 
 
 def output(state: ExplorationState) -> dict:
@@ -152,7 +136,8 @@ class ExplorationTask(GraspTask):
             "Input for exploration must already be an ExplorationState"
         )
         self.state = input
-        return format_state(input)
+        return "Explore the available knowledge graphs. Add to, delete from, or \
+update the current notes along the way."
 
     def output(self, messages: list[Message]) -> dict:
         return output(self.state)
