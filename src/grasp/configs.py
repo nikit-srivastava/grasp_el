@@ -110,18 +110,10 @@ class NotesConfig(GraspConfig):
 
 
 class NoteTakingConfig(NotesConfig):
-    # add note taking model configuration
-    # note taking model can be different from the main GRASP model
-    note_taking_model: str | None = None
-    note_taking_model_endpoint: str | None = None
-    note_taking_max_steps: int = 50
-
-    # and have different decoding parameters
-    note_taking_temperature: float | None = None
-    note_taking_top_p: float | None = None
-    note_taking_reasoning_effort: str | None = None
-    note_taking_reasoning_summary: str | None = None
-    note_taking_api: str | None = None
+    # optional model config for the note taking step;
+    # if set, fully replaces the parent GraspConfig's model config
+    # for note taking (parent fields are not inherited)
+    note_taking_model: ModelConfig | None = None
 
 
 class NotesFromSamplesInput(BaseModel):

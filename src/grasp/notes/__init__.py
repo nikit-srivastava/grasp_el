@@ -1,6 +1,5 @@
 import os
 import random
-from copy import deepcopy
 from logging import Logger
 
 import yaml
@@ -396,20 +395,14 @@ def take_notes(
 
     num_messages = len(messages)
 
-    # copy config to avoid modifying the original
-    config = deepcopy(config)
-    config.model = config.note_taking_model or config.model
-    config.model_endpoint = config.note_taking_model_endpoint or config.model_endpoint
-    config.temperature = config.note_taking_temperature or config.temperature
-    config.top_p = config.note_taking_top_p or config.top_p
-    config.reasoning_effort = (
-        config.note_taking_reasoning_effort or config.reasoning_effort
-    )
-    config.api = config.note_taking_api or config.api
+    # if a note taking model is configured, use it as a full
+    # replacement for the model config; otherwise fall back to
+    # the parent grasp config
+    nt_config = config.note_taking_model or config
 
-    while len(messages) - num_messages < config.note_taking_max_steps:
+    while len(messages) - num_messages < config.max_steps:
         try:
-            response = call_model(messages, functions, config)
+            response = call_model(messages, functions, nt_config)
         except Exception as e:
             logger.error(f"LLM API returned error during note taking: {e}")
             return
