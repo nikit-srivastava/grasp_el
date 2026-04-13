@@ -10,7 +10,7 @@ from universal_ml_utils.io import dump_json, load_json, load_jsonl
 from universal_ml_utils.logging import get_logger
 
 from grasp.configs import ModelConfig
-from grasp.manager.utils import load_kg_info
+from grasp.manager.utils import get_common_sparql_prefixes, load_kg_info, merge_prefixes
 from grasp.model import Message, call_model
 from grasp.sparql.metrics import f1_score
 from grasp.sparql.types import AskResult, SelectResult
@@ -102,7 +102,10 @@ def evaluate_f1(
 
     sparql_parser = load_sparql_parser()
     iri_literal_parser = load_iri_and_literal_parser()
-    prefixes, _ = load_kg_info(kg)
+
+    prefixes = get_common_sparql_prefixes()
+    kg_prefixes, _ = load_kg_info(kg)
+    prefixes, _, _ = merge_prefixes(prefixes, kg_prefixes, logger)
 
     def fix(sparql: str) -> str | None:
         if not fix_prefixes:

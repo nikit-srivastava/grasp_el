@@ -51,9 +51,7 @@ from grasp.sparql.utils import (
     fix_prefixes,
     format_iri,
     get_endpoint,
-    load_entity_info_sparql,
     load_iri_and_literal_parser,
-    load_property_info_sparql,
     load_sparql_parser,
     prettify,
     query_type,
@@ -62,7 +60,6 @@ from grasp.sparql.utils import (
 from grasp.utils import (
     clip,
     format_list,
-    format_notes,
     format_prefixes,
     get_index_dir,
     ordered_unique,
@@ -86,7 +83,9 @@ class KgManager:
         self.iri_literal_parser = load_iri_and_literal_parser()
 
         self.prefixes, _, self.kg_prefixes = merge_prefixes(
-            get_common_sparql_prefixes(), prefixes or {}, self.logger
+            get_common_sparql_prefixes(),
+            prefixes or {},
+            self.logger,
         )
 
         self.disable_info_retrieval = False

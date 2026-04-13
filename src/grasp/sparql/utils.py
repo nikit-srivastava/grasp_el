@@ -530,10 +530,7 @@ def fix_prefixes(
     remove_known: bool = False,
     sort: bool = False,
 ) -> str:
-    parse, rest = parse_string(
-        sparql,
-        sparql_parser,
-    )
+    parse, rest = parse_string(sparql, sparql_parser)
 
     reverse_prefixes = {long: short for short, long in prefixes.items()}
 
