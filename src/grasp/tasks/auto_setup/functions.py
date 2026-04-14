@@ -187,12 +187,12 @@ def validate_sparql_vars(parse: dict, required: set[str]):
 
 def validate_order_by(parse: dict, target: str):
     order_by = find_order_by(parse)
-    if order_by != target:
-        raise ValueError(f"ORDER BY clause must be '{target}' instead of '{order_by}'")
+    if order_by.replace(" ", "") != target.replace(" ", ""):
+        raise ValueError(f"ORDER BY clause must be '{target}'")
 
 
 INDEX_SPARQL_VARS = {"id", "value", "tags"}
-INDEX_SPARQL_ORDER_BY = "ORDER BY DESC ( ?score ) ?id DESC ( ?tags )"
+INDEX_SPARQL_ORDER_BY = "ORDER BY DESC(?score) ?id DESC(?tags)"
 
 
 def validate_index_sparql(manager: KgManager, sparql: str):

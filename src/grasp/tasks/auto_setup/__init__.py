@@ -196,15 +196,27 @@ and repeat, otherwise stop."""
             return self._info_rules()
 
     def _index_rules(self) -> list[str]:
-        return [
+        name = self.input["name"]
+        rules = [
             "If the user provides additional notes about the desired setup, make sure to follow them.",
-            "If you want to make an IRI searchable even if it does not have any associated literals, "
-            "bind the IRI itself as value in the index SPARQL via BIND(?id AS ?value).",
             "When developing the SPARQL queries, try to make them as efficient as possible. For example, "
             "put VALUES { {IDS} } clauses in the info SPARQL inside each UNION.",
-            "If there already exsists a setup, you can verify the index and info SPARQLs "
-            "also by using the search-related functions and checking their results.",
+            f"If there already exists a {name} index, you can verify its index and info SPARQLs "
+            "also by checking that the search-related functions return expected results.",
         ]
+        if name == "entities":
+            rules.append(
+                f"Not all {name} in the knowledge graph need to and should be covered by the index. "
+                f"For example, {name} without any descriptive associated literals typically also do not "
+                f"need to be searchable. If you want to make such {name} searchable anyway, "
+                f"just bind their IRI as value in the index SPARQL via BIND(?id AS ?value).",
+            )
+        elif name == "properties":
+            rules.append(
+                f"If you want to make {name} searchable even if they do not have any descriptive associated literals "
+                f"(typical for {name}), just bind their IRI as value in the index SPARQL via BIND(?id AS ?value).",
+            )
+        return rules
 
     def _info_rules(self) -> list[str]:
         return [
