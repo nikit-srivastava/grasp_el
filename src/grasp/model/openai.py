@@ -25,7 +25,7 @@ class OpenAICompletionsModel(Model):
         msgs = []
         for msg in messages:
             if isinstance(msg.content, str):
-                msgs.append(msg.model_dump(exclude={"name"}))
+                msgs.append(msg.model_dump())
                 continue
 
             # response content
@@ -149,7 +149,7 @@ class OpenAIResponsesModel(Model):
 
         for msg in messages:
             if isinstance(msg.content, str):
-                msgs.append(msg.model_dump(exclude={"name"}))
+                msgs.append(msg.model_dump())
                 continue
 
             assert isinstance(msg.content.raw, OpenAIResponse)
