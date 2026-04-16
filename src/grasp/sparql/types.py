@@ -1,3 +1,4 @@
+import random
 from dataclasses import dataclass
 from enum import StrEnum
 from itertools import groupby
@@ -241,6 +242,7 @@ class Alternative:
     def get_selection_string(
         self,
         max_aliases: int = 5,
+        max_info: int = 10,
         show_matched_label: bool = True,
         add_info: bool = True,
         include_variants: list[str] | None = None,
@@ -278,8 +280,12 @@ class Alternative:
             if len(self.aliases) > max_aliases:
                 s += ", etc."
 
-        if add_info and self.info:
-            s += ":\n" + format_list((clip(info) for info in self.info), indent=2)
+        if add_info and self.info and max_info > 0:
+            if len(self.info) > max_info:
+                infos = sorted(random.sample(self.info, max_info))
+            else:
+                infos = self.info
+            s += ":\n" + format_list((clip(info) for info in infos), indent=2)
 
         return s
 
