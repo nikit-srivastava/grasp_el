@@ -17,7 +17,7 @@ SELECT DISTINCT ?id ?value ?tags WHERE {
     FILTER(LANG(?value) = "en")
   } UNION {
     # Properties often do not have labels, so also make IRI itself
-    # searchable by binding it as value
+    # searchable via its local name by binding it to value
     BIND(?id AS ?value)
   }
 } ORDER BY DESC(?score) ?id DESC(?tags)

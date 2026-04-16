@@ -201,8 +201,9 @@ and repeat, otherwise stop."""
             "If the user provides additional notes about the desired setup, make sure to follow them.",
             "When developing the SPARQL queries, try to make them as efficient as possible. For example, "
             "put VALUES { {IDS} } clauses in the info SPARQL inside each UNION.",
-            f"To make {name} searchable via their identifiers, which is e.g. useful if they do not have "
-            "any associated literals, just bind the IRI to the ?value variable in the index SPARQL.",
+            f"To make {name} searchable via their local names, which e.g. is useful "
+            "if they do not have any associated literals, use the IRIs as values by binding ?id to ?value "
+            "in the index SPARQL.",
         ]
         if name == "entities":
             rules.append(
