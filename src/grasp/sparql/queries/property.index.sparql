@@ -16,8 +16,10 @@ SELECT DISTINCT ?id ?value ?tags WHERE {
     ?id skos:altLabel ?value
     FILTER(LANG(?value) = "en")
   } UNION {
-    # Properties often do not have labels, so also make IRI itself
-    # searchable via its local name by binding it to value
+    # Properties often do not have labels, so make IRI itself
+    # searchable via its local name by binding it to value directly;
+    # e.g., on Wikidata http://www.wikidata.org/prop/direct/P31 would 
+    # be searchable as "P31" in the end.
     BIND(?id AS ?value)
   }
 } ORDER BY DESC(?score) ?id DESC(?tags)
