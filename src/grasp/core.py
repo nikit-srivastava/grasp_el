@@ -1,5 +1,6 @@
 import json
 import time
+import traceback
 import uuid
 from copy import deepcopy
 from logging import Logger
@@ -280,7 +281,8 @@ def generate(
             break
         except Exception as e:
             error = {
-                "content": f"Failed to generate response:\n{e}",
+                "content": f"Failed to generate response:\n{e}\n\n"
+                f"{traceback.format_exc()}",
                 "reason": "api",
             }
             logger.error(format_error(**error))

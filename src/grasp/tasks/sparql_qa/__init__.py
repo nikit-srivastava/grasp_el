@@ -8,6 +8,7 @@ from grasp.configs import GraspConfig
 from grasp.functions import find_manager
 from grasp.manager import KgManager, format_kgs
 from grasp.model import Message, ToolCall
+from grasp.model.base import ResponseMessage
 from grasp.tasks.base import FeedbackTask, GraspTask
 from grasp.tasks.sparql_qa.examples import (
     SparqlQaExampleIndex,
@@ -190,7 +191,7 @@ class CancelCallModel(BaseModel):
     arguments: CancelModel
 
 
-def get_raw_tool_call_from_message(message: str) -> str | None:
+def get_raw_tool_call_from_message(message: str | ResponseMessage) -> str | None:
     # sometimes the model fails to call the answer function, but
     # provides the output in one of the following formats:
     # 1) within <tool_call>...</tool_call> tags:
@@ -198,6 +199,9 @@ def get_raw_tool_call_from_message(message: str) -> str | None:
     #    {"name": "answer", "arguments": "{...}"}
     # 2) as JSON in ```json...``` code block:
     #    do as in 1)
+
+    if isinstance(message, ResponseMessage):
+        message = message.content
 
     # check for tool_call tags
     tool_call_match = re.search(
@@ -219,7 +223,7 @@ def get_raw_tool_call_from_message(message: str) -> str | None:
         return tool_call_match.group(1).strip()
 
 
-def get_answer_from_message(message: str | None) -> ToolCall | None:
+def get_answer_from_message(message: str | ResponseMessage | None) -> ToolCall | None:
     if message is None:
         return None
 
@@ -244,7 +248,7 @@ def get_answer_from_message(message: str | None) -> ToolCall | None:
         return None
 
 
-def get_cancel_from_message(message: str | None) -> ToolCall | None:
+def get_cancel_from_message(message: str | ResponseMessage | None) -> ToolCall | None:
     if message is None:
         return None
 
@@ -269,9 +273,11 @@ def get_cancel_from_message(message: str | None) -> ToolCall | None:
         return None
 
 
-def get_sparql_from_message(message: str | None) -> ToolCall | None:
+def get_sparql_from_message(message: str | ResponseMessage | None) -> ToolCall | None:
     if message is None:
         return None
+    elif isinstance(message, ResponseMessage):
+        message = message.content
 
     # Check for SPARQL code blocks
     sparql_match = re.search(
@@ -293,7 +299,7 @@ def get_sparql_from_message(message: str | None) -> ToolCall | None:
 def get_answer_or_cancel(
     messages: list[Message],
 ) -> tuple[ToolCall | None, ToolCall | None]:
-    last_message: str | None = None
+    last_message: str | ResponseMessage | None = None
     last_answer: ToolCall | None = None
     last_cancel: ToolCall | None = None
     last_execute: ToolCall | None = None

@@ -122,7 +122,10 @@ def format_response(response: Response) -> str:
         if response.has_reasoning_content:
             content += "Content:\n"
 
-        content += f"{response.message}\n\n"
+        if isinstance(response.message, str):
+            content += f"{response.message}\n\n"
+        else:
+            content += f"{response.message.content}\n\n"
 
     for tool_call in response.tool_calls:
         content += format_tool_call(tool_call) + "\n\n"

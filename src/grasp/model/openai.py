@@ -3,11 +3,23 @@ from typing import Any
 from uuid import uuid4
 
 from openai import OpenAI
-from openai.types.chat import ChatCompletion
+from openai.types.chat import (
+    ChatCompletion,
+    ChatCompletionMessage,
+    ChatCompletionMessageCustomToolCall,
+)
 from openai.types.responses import Response as OpenAIResponse
 
 from grasp.configs import ModelConfig
-from grasp.model.base import Message, Model, Reasoning, Response, ToolCall, strip_none
+from grasp.model.base import (
+    Message,
+    Model,
+    Reasoning,
+    Response,
+    ResponseMessage,
+    ToolCall,
+    strip_none,
+)
 
 
 class OpenAICompletionsModel(Model):
@@ -28,9 +40,35 @@ class OpenAICompletionsModel(Model):
                 msgs.append(msg.model_dump())
                 continue
 
-            # response content
-            assert isinstance(msg.content.raw, ChatCompletion)
-            msgs.append(msg.content.raw.choices[0].message)
+            if msg.content.raw is not None:
+                assert isinstance(msg.content.raw, ChatCompletion)
+                cmpl_msg = msg.content.raw.choices[0].message
+            else:
+                # rebuild message content from non-raw content
+                # for example, when given via the api in the server
+                assert isinstance(msg.content, Response)
+                cnt = msg.content
+                cmpl_msg = {
+                    "id": cnt.id,
+                    "role": msg.role,
+                    "content": cnt.message.content
+                    if isinstance(cnt.message, ResponseMessage)
+                    else cnt.message,
+                    "tool_calls": [
+                        {
+                            "id": tool_call.id,
+                            "type": "function",
+                            "function": {
+                                "name": tool_call.name,
+                                "arguments": json.dumps(tool_call.args),
+                            },
+                        }
+                        for tool_call in cnt.tool_calls
+                    ],
+                }
+
+            msgs.append(cmpl_msg)
+
             for tool_call in msg.content.tool_calls:
                 assert tool_call.result is not None, "Expected tool call result"
                 msgs.append(
@@ -152,8 +190,68 @@ class OpenAIResponsesModel(Model):
                 msgs.append(msg.model_dump())
                 continue
 
-            assert isinstance(msg.content.raw, OpenAIResponse)
-            msgs.extend(msg.content.raw.output)
+            if msg.content.raw is not None:
+                assert isinstance(msg.content.raw, OpenAIResponse), (
+                    f"Unexpected message:\n{msg.model_dump_json(indent=2)}"
+                )
+                msgs.extend(msg.content.raw.output)
+            else:
+                # rebuild message content from non-raw content
+                # for example, when given via the api in the server
+                assert isinstance(msg.content, Response)
+                cnt = msg.content
+
+                if isinstance(cnt.message, str):
+                    msgs.append(
+                        {
+                            "id": f"msg_{uuid4().hex}",
+                            "type": "message",
+                            "role": msg.role,
+                            "content": [{"type": "output_text", "text": cnt.message}],
+                        }
+                    )
+
+                elif isinstance(cnt.message, ResponseMessage):
+                    msgs.append(
+                        {
+                            "id": cnt.message.id,
+                            "type": "message",
+                            "role": msg.role,
+                            "content": [
+                                {"type": "output_text", "text": cnt.message.content}
+                            ],
+                        }
+                    )
+
+                if cnt.reasoning:
+                    rs = cnt.reasoning
+                    rs_msg: dict = {"id": rs.id}
+
+                    if rs.summary:
+                        rs_msg["summary"] = [
+                            {"type": "summary_text", "text": rs.summary}
+                        ]
+
+                    if rs.content:
+                        rs_msg["content"] = [
+                            {"type": "reasoning_text", "text": rs.content}
+                        ]
+
+                    if rs.encrypted_content:
+                        rs_msg["encrypted_content"] = rs.encrypted_content
+
+                    msgs.append(rs_msg)
+
+                for tool_call in cnt.tool_calls:
+                    msgs.append(
+                        {
+                            "call_id": tool_call.id,
+                            "type": "function_call",
+                            "name": tool_call.name,
+                            "arguments": json.dumps(tool_call.args),
+                        }
+                    )
+
             for tool_call in msg.content.tool_calls:
                 assert tool_call.result is not None, "Expected tool call result"
                 msgs.append(
@@ -195,9 +293,11 @@ class OpenAIResponsesModel(Model):
         tool_calls = []
 
         for output in response.output:
-            if output.type == "message":
-                if output.content:
-                    message = "\n\n".join(entry.text for entry in output.content)
+            if output.type == "message" and output.content:
+                message = ResponseMessage(
+                    id=output.id,
+                    content="\n\n".join(entry.text for entry in output.content),
+                )
 
             elif output.type == "reasoning":
                 # reasoning

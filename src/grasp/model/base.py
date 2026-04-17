@@ -21,6 +21,11 @@ class Reasoning(BaseModel):
     encrypted_content: str | None = None
 
 
+class ResponseMessage(BaseModel):
+    id: str
+    content: str
+
+
 def strip_none(s: str | None) -> str | None:
     if s is None:
         return None
@@ -34,7 +39,7 @@ def strip_none(s: str | None) -> str | None:
 
 class Response(BaseModel):
     id: str
-    message: str | None = None
+    message: str | ResponseMessage | None = None
     reasoning: Reasoning | None = None
     tool_calls: list[ToolCall] = []
     usage: dict | None = None
@@ -69,14 +74,18 @@ class Response(BaseModel):
             reasoning: str = self.reasoning.content or self.reasoning.summary  # type: ignore
             content["reasoning"] = reasoning
 
-        if self.message is not None:
+        if isinstance(self.message, str):
             content["content"] = self.message
+        elif isinstance(self.message, ResponseMessage):
+            content["content"] = self.message.content
 
         return content
 
     def hash(self) -> str:
         msg: dict[str, Any] = {
-            "msg": self.message,
+            "msg": self.message.content
+            if isinstance(self.message, ResponseMessage)
+            else self.message,
             "reasoning": self.reasoning.model_dump(exclude={"id"})
             if self.reasoning
             else None,
