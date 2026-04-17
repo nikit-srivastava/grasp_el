@@ -17,13 +17,11 @@ from grasp.sparql.metrics import f1_score
 from grasp.sparql.types import AskResult, SelectResult
 from grasp.sparql.utils import (
     execute,
-    get_endpoint,
+    get_qlever_endpoint,
     load_iri_and_literal_parser,
     load_sparql_parser,
 )
-from grasp.sparql.utils import (
-    fix_prefixes as fix_sparql_prefixes,
-)
+from grasp.sparql.utils import fix_prefixes as fix_sparql_prefixes
 from grasp.tasks.sparql_qa.examples import SparqlQaSample
 from grasp.utils import format_message, is_invalid_evaluation, is_invalid_output
 
@@ -98,15 +96,14 @@ def evaluate_f1(
 ) -> None:
     logger = get_logger("GRASP EVALUATION", log_level)
 
-    if endpoint is None:
-        endpoint = get_endpoint(kg)
-
     sparql_parser = load_sparql_parser()
     iri_literal_parser = load_iri_and_literal_parser()
 
     prefixes = get_common_sparql_prefixes()
-    kg_prefixes, _ = load_kg_info(kg)
-    prefixes, _, _ = merge_prefixes(prefixes, kg_prefixes, logger)
+    info = load_kg_info(kg)
+    prefixes, _, _ = merge_prefixes(prefixes, info.prefixes, logger)
+
+    endpoint = endpoint or info.endpoint or get_qlever_endpoint(kg)
 
     def fix(sparql: str) -> str:
         if not fix_prefixes:

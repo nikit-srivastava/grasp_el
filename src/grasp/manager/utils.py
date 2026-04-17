@@ -14,9 +14,9 @@ from search_rdf.model import (
     SentenceTransformerModel,
 )
 from universal_ml_utils.configuration import load_config
-from universal_ml_utils.io import dump_json, load_json, load_text
+from universal_ml_utils.io import load_json, load_text
 
-from grasp.manager.normalizer import Normalizer, WikidataPropertyNormalizer
+from grasp.manager.normalizer import Normalizer
 from grasp.sparql.types import ObjType
 from grasp.sparql.utils import find_longest_prefix
 from grasp.utils import get_index_dir
@@ -26,12 +26,19 @@ EmbeddingModel = HuggingFaceImageModel | OpenClipModel | SentenceTransformerMode
 
 
 @dataclass
-class Index:
+class KgIndex:
     description: str
     index: SearchIndex
     data: Data
     info_sparql: str | None = None
     normalizer: Normalizer | None = None
+
+
+@dataclass
+class KgInfo:
+    prefixes: dict[str, str]
+    description: str | None
+    endpoint: str | None
 
 
 def load_data(index_dir: str) -> Data:
@@ -136,7 +143,7 @@ def load_other_indices(
     kg: str,
     indices: list[str],
     logger: logging.Logger | None = None,
-) -> dict[str, Index]:
+) -> dict[str, KgIndex]:
     base_index_dir = get_index_dir(kg)
     config_path = os.path.join(base_index_dir, "indices.yaml")
     if not os.path.exists(config_path):
@@ -172,7 +179,7 @@ def load_other_indices(
             continue
 
         info_sparql = load_info_sparql(sub_index_dir, logger)
-        others[name] = Index(desc, index, index.data(), info_sparql)
+        others[name] = KgIndex(desc, index, index.data(), info_sparql)
 
     return others
 
@@ -211,21 +218,9 @@ def load_embedding_model(
     return models
 
 
-def load_kg_normalizers(kg: str) -> tuple[Normalizer, Normalizer]:
-    ent_normalizer = Normalizer()
-    prop_normalizer = ent_normalizer
-    if kg.startswith("wikidata"):
-        prop_normalizer = WikidataPropertyNormalizer()
-    return ent_normalizer, prop_normalizer
-
-
-def load_kg_info(
-    kg: str,
-    logger: logging.Logger | None = None,
-) -> tuple[dict[str, str], str | None]:
+def load_kg_info(kg: str, logger: logging.Logger | None = None) -> KgInfo:
     kg_index_dir = get_index_dir(kg)
     info_file = os.path.join(kg_index_dir, "info.json")
-    prefix_file = os.path.join(kg_index_dir, "prefixes.json")
 
     # load info.json if it exists, fall back to empty
     if os.path.exists(info_file):
@@ -233,19 +228,8 @@ def load_kg_info(
     else:
         info = {}
 
-    description = info.get("description")
-    prefixes = info.get("prefixes", {})
-
-    # if no prefixes in info.json, try prefixes.json (legacy)
-    if not prefixes and os.path.exists(prefix_file):
-        prefixes = load_json(prefix_file)
-
-    # save prefixes back to info.json for future use
-    if prefixes and not info.get("prefixes"):
-        info["prefixes"] = prefixes
-        dump_json(info, info_file, indent=2)
-
     # compatibility with IRIs: strip leading < and trailing >
+    prefixes = info.get("prefixes", {})
     prefixes = {k: v.lstrip("<").rstrip(">") for k, v in prefixes.items()}
 
     # remove prefixes that conflict with or duplicate common prefixes
@@ -255,7 +239,7 @@ def load_kg_info(
         logger,
     )
 
-    return kg_prefixes, description
+    return KgInfo(kg_prefixes, info.get("description"), info.get("endpoint"))
 
 
 def merge_prefixes(

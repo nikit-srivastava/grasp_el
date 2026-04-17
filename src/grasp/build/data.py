@@ -23,7 +23,7 @@ from grasp.manager.utils import (
 from grasp.sparql.types import Binding
 from grasp.sparql.utils import (
     find_longest_prefix,
-    get_endpoint,
+    get_qlever_endpoint,
     has_scheme,
     load_entity_index_sparql,
     load_iri_and_literal_parser,
@@ -98,18 +98,12 @@ def get_data(
     logger = get_logger("GRASP DATA", log_level)
     parser = load_iri_and_literal_parser()
 
-    needs_endpoint = entity_file is None or property_file is None
-    if endpoint is None and needs_endpoint:
-        endpoint = get_endpoint(kg)
-        logger.info(
-            f"Using endpoint {endpoint} for {kg} because "
-            "no endpoint is set in the config"
-        )
+    info = load_kg_info(kg)
+
+    endpoint = endpoint or info.endpoint or get_qlever_endpoint(kg)
 
     prefixes = get_common_sparql_prefixes()
-    kg_prefixes, _ = load_kg_info(kg)
-    prefixes, _, _ = merge_prefixes(prefixes, kg_prefixes, logger)
-
+    prefixes, _, _ = merge_prefixes(prefixes, info.prefixes, logger)
     logger.info(f"Using prefixes:\n{json.dumps(prefixes, indent=2)}")
 
     kg_dir = get_index_dir(kg)

@@ -43,7 +43,7 @@ class IndexState(BaseModel):
 
 
 class InfoState(BaseModel):
-    prefixes: dict[str, str] = {}
+    prefixes: dict[str, str]
     description: str | None = None
 
 
@@ -61,8 +61,11 @@ def load_index_state(manager: KgManager, name: str) -> IndexState:
 
 
 def load_info_state(manager: KgManager) -> InfoState:
-    prefixes, desc = load_kg_info(manager.kg)
-    return InfoState(prefixes=prefixes, description=desc)
+    kg_info = load_kg_info(manager.kg)
+    return InfoState(
+        prefixes=kg_info.prefixes,
+        description=kg_info.description,
+    )
 
 
 def format_query(manager: KgManager, query: str | None) -> str:
@@ -282,6 +285,7 @@ and repeat, otherwise stop."""
         raise FunctionCallException(f"Unknown function {fn_name}")
 
     def set_description(self, description: str) -> str:
+        assert isinstance(self.state, (IndexState, InfoState))
         self.state.description = description
         return "Description updated."
 
@@ -292,6 +296,7 @@ and repeat, otherwise stop."""
         sparql: str,
         known: set[str],
     ) -> str:
+        assert isinstance(self.state, IndexState)
         name = self.input["name"]
 
         if self.config.know_before_use:
@@ -341,6 +346,7 @@ and repeat, otherwise stop."""
             return format_info_state(self.state)
 
     def add_prefix(self, manager: KgManager, short: str, namespace: str) -> str:
+        assert isinstance(self.state, InfoState)
         if short in self.state.prefixes:
             raise FunctionCallException(f"Prefix '{short}' already exists.")
 
@@ -352,6 +358,7 @@ and repeat, otherwise stop."""
         return f"Prefix '{short}' added and available for subsequent function calls."
 
     def delete_prefix(self, manager: KgManager, short: str) -> str:
+        assert isinstance(self.state, InfoState)
         if short not in self.state.prefixes:
             raise FunctionCallException(f"Prefix '{short}' does not exist.")
 
@@ -366,6 +373,7 @@ and repeat, otherwise stop."""
         return f"Prefix '{short}' deleted and no longer available for subsequent function calls."
 
     def update_prefix(self, manager: KgManager, short: str, namespace: str) -> str:
+        assert isinstance(self.state, InfoState)
         if short not in self.state.prefixes:
             raise FunctionCallException(f"Prefix '{short}' does not exist.")
 
@@ -393,7 +401,7 @@ Additional notes:
 {self.input.get("notes")}"""
 
         else:
-            self.state = load_info_state(manager)
+            self.state = load_kg_info(manager.kg)
             return f"""\
 Set up the prefixes and description for the {manager.kg} knowledge graph.
 
@@ -407,15 +415,22 @@ Additional notes:
                 "type": "output",
                 "phase": "index",
                 "name": self.input["name"],
-                "index": self.state.index_sparql,
-                "info": self.state.info_sparql,
-                "description": self.state.description,
+                "sparql": {
+                    "index": self.state.index_sparql,
+                    "info": self.state.info_sparql,
+                },
+                "info": {
+                    "description": self.state.description,
+                },
             }
         else:
             assert isinstance(self.state, InfoState)
             return {
                 "type": "output",
                 "phase": "info",
-                "description": self.state.description,
-                "prefixes": self.state.prefixes,
+                "info": {
+                    "description": self.state.description,
+                    "prefixes": self.state.prefixes,
+                    "endpoint": self.managers[0].endpoint,
+                },
             }

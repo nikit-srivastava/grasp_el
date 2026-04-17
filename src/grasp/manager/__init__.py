@@ -16,7 +16,7 @@ from grasp.configs import KgConfig
 from grasp.manager.normalizer import Normalizer, WikidataPropertyNormalizer
 from grasp.manager.utils import (
     EmbeddingModel,
-    Index,
+    KgIndex,
     SearchIndex,
     format_index_meta,
     get_common_sparql_prefixes,
@@ -50,7 +50,7 @@ from grasp.sparql.utils import (
     find_longest_prefix,
     fix_prefixes,
     format_iri,
-    get_endpoint,
+    get_qlever_endpoint,
     load_iri_and_literal_parser,
     load_sparql_parser,
     prettify,
@@ -71,7 +71,7 @@ class KgManager:
         self,
         kg: str,
         prefixes: dict[str, str] | None = None,
-        indices: dict[str, Index] | None = None,
+        indices: dict[str, KgIndex] | None = None,
         endpoint: str | None = None,
         description: str | None = None,
     ):
@@ -89,7 +89,7 @@ class KgManager:
         )
 
         self.disable_info_retrieval = False
-        self.endpoint = endpoint or get_endpoint(self.kg)
+        self.endpoint = endpoint or get_qlever_endpoint(self.kg)
         self.indices = indices or {}
         self.description = description
 
@@ -313,7 +313,7 @@ class KgManager:
             sort,
         )
 
-    def get(self, name: str) -> Index:
+    def get(self, name: str) -> KgIndex:
         if name not in self.indices:
             raise ValueError(f"Index '{name}' not found")
         return self.indices[name]
@@ -324,7 +324,7 @@ class KgManager:
     def get_data(self, name: str) -> Data:
         return self.get(name).data
 
-    def try_get(self, name: str) -> Index | None:
+    def try_get(self, name: str) -> KgIndex | None:
         return self.indices.get(name)
 
     def get_normalizer(self, name: str) -> Normalizer:
@@ -758,7 +758,7 @@ def try_load_index(
     index_name: str,
     index_type: str,
     logger: logging.Logger | None = None,
-) -> Index | None:
+) -> KgIndex | None:
     index_dir = os.path.join(get_index_dir(kg), index_name)
 
     index = try_load_search_index(index_dir, index_type, logger)
@@ -773,7 +773,7 @@ def try_load_index(
     else:
         normalizer = None
 
-    return Index(
+    return KgIndex(
         description=description
         or DEFAULT_DESCRIPTIONS.get(index_name, "No description available"),
         index=index,
@@ -789,17 +789,18 @@ def load_kg_manager(
 ) -> KgManager:
     logger = get_logger(f"{cfg.kg.upper()} KG MANAGER LOADER")
 
-    prefixes, description = load_kg_info(cfg.kg, logger)
-    indices: dict[str, Index] = {}
+    info = load_kg_info(cfg.kg, logger)
+    endpoint = cfg.endpoint or info.endpoint
+    indices: dict[str, KgIndex] = {}
 
     if skip_indices:
         logger.info("Skipping loading of indices")
         return KgManager(
             cfg.kg,
-            prefixes,
+            info.prefixes,
             indices,
-            cfg.endpoint,
-            description,
+            endpoint,
+            info.description,
         )
 
     ent_index = try_load_index(
@@ -833,10 +834,10 @@ def load_kg_manager(
 
     return KgManager(
         cfg.kg,
-        prefixes,
+        info.prefixes,
         indices,
-        cfg.endpoint,
-        description,
+        endpoint,
+        info.description,
     )
 
 

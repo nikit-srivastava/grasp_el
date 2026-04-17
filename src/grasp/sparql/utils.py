@@ -24,7 +24,7 @@ READ_TIMEOUT = 10
 QLEVER_API = "https://qlever.dev/api"
 
 
-def get_endpoint(kg: str) -> str:
+def get_qlever_endpoint(kg: str) -> str:
     return f"{QLEVER_API}/{kg}"
 
 

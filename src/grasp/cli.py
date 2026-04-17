@@ -829,7 +829,10 @@ def auto_setup_grasp(args: argparse.Namespace) -> None:
     for phase_input in phases:
         phase = phase_input["phase"]
         if phase == "index":
+            trace_dir = os.path.join(kg_dir, phase_input["name"])
             phase += f" ({phase_input['name']})"
+        else:
+            trace_dir = kg_dir
 
         logger.info(
             f"Starting auto-setup {phase} phase for knowledge graph {manager.kg}"
@@ -847,6 +850,13 @@ def auto_setup_grasp(args: argparse.Namespace) -> None:
             )
         )
 
+        # save the full trace so we can inspect it
+        # independent of success or failure
+        trace_path = os.path.join(trace_dir, "auto_setup.json")
+        backup(trace_path)
+        dump_json(result, trace_path, indent=2)
+        logger.info(f"Saved auto-setup {phase} trace to {trace_path}")
+
         output = result.get("output")
         if output is None:
             logger.error(f"Auto-setup {phase} phase did not produce output")
@@ -856,17 +866,13 @@ def auto_setup_grasp(args: argparse.Namespace) -> None:
         if phase == "info":
             path = os.path.join(kg_dir, "info.json")
             backup(path)
-            dump_json(
-                {"description": output["description"], "prefixes": output["prefixes"]},
-                path,
-                indent=2,
-            )
+            dump_json(output["info"], path, indent=2)
             logger.info(f"Saved prefixes and description to {path}")
             continue
 
         name = phase_input["name"]
         for typ in ["index", "info"]:
-            sparql = output.get(typ)
+            sparql = output["sparql"].get(typ)
             if sparql is None:
                 continue
 
@@ -875,11 +881,10 @@ def auto_setup_grasp(args: argparse.Namespace) -> None:
             dump_text(sparql, path)
             logger.info(f"Saved {name} {typ} SPARQL to {path}")
 
-        if output.get("description") is not None:
-            path = os.path.join(kg_dir, name, "info.json")
-            backup(path)
-            dump_json({"description": output["description"]}, path, indent=2)
-            logger.info(f"Saved {name} description to {path}")
+        path = os.path.join(kg_dir, name, "info.json")
+        backup(path)
+        dump_json(output["info"], path, indent=2)
+        logger.info(f"Saved {name} description to {path}")
 
 
 def main():
