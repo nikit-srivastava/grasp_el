@@ -92,8 +92,6 @@ class OpenAICompletionsModel(Model):
             tools=[{"type": "function", "function": fn} for fn in fns],  # type: ignore
             tool_choice=config.tool_choice,  # type: ignore
             parallel_tool_calls=config.parallel_tool_calls,
-            temperature=config.temperature,
-            top_p=config.top_p,
             max_completion_tokens=config.max_completion_tokens,
             **config.model_kwargs,
         )
@@ -275,8 +273,6 @@ class OpenAIResponsesModel(Model):
             tools=[{"type": "function", **fn} for fn in fns],  # type: ignore
             tool_choice=config.tool_choice,  # type: ignore
             parallel_tool_calls=config.parallel_tool_calls,
-            temperature=config.temperature,
-            top_p=config.top_p,
             max_output_tokens=config.max_completion_tokens,
             **config.model_kwargs,
             store=False,

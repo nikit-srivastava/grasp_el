@@ -34,8 +34,6 @@ class ModelConfig(BaseModel):
 
     # important inference parameters, supported by almost
     # all providers and models
-    temperature: float | None = 1.0
-    top_p: float | None = 1.0
     parallel_tool_calls: bool = False
     tool_choice: Literal["auto", "required"] = "auto"
     max_completion_tokens: int = 8192  # 8k, leaves enough space for reasoning models

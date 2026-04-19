@@ -4,7 +4,6 @@ from grasp.sparql.utils import find, find_all, parse_string, parse_to_string
 STOP_FUNCTION = {
     "name": "stop",
     "description": "Stop the setup process.",
-    "strict": True,
 }
 
 
@@ -32,7 +31,6 @@ def index_functions() -> list[dict]:
         {
             "name": "show_setup",
             "description": "Show the current index and info SPARQL queries for the knowledge graph.",
-            "strict": True,
         },
         {
             "name": "set_query",
@@ -68,7 +66,6 @@ def info_functions() -> list[dict]:
         {
             "name": "show_setup",
             "description": "Show the current prefixes and description of the knowledge graph.",
-            "strict": True,
         },
         {
             "name": "add_prefix",

@@ -93,13 +93,6 @@ def note_function_definitions(managers: list[KgManager]) -> list[dict]:
         {
             "name": "stop",
             "description": "Stop the note taking process.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": [],
-                "additionalProperties": False,
-            },
-            "strict": True,
         },
     ]
 
@@ -107,7 +100,8 @@ def note_function_definitions(managers: list[KgManager]) -> list[dict]:
 def check_note(note: str, max_note_length: int) -> None:
     if len(note) > max_note_length:
         raise FunctionCallException(
-            f"Note exceeds maximum length of {max_note_length} characters"
+            f"Note with {len(note):,} characters exceeds maximum "
+            f"length of {max_note_length:,} characters"
         )
 
 

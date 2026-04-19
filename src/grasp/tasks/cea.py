@@ -289,18 +289,10 @@ This function overwrites any previous annotation of the cell.""",
         {
             "name": "show_annotations",
             "description": "Show the current annotations for the table.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": [],
-                "additionalProperties": False,
-            },
-            "strict": True,
         },
         {
             "name": "stop",
             "description": "Finalize your annotations and stop the annotation process.",
-            "strict": True,
         },
     ]
     return fns
