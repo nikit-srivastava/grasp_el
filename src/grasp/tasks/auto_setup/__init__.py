@@ -205,8 +205,8 @@ and repeat, otherwise stop."""
         rules = [
             "If the user provides additional notes about the desired setup, make sure to follow them.",
             "When developing the SPARQL queries, try to make them as efficient as possible. For example, "
-            "put VALUES { {IDS} } clauses in the info SPARQL inside each UNION, or avoid string operations "
-            "for the index SPARQL wherever possible.",
+            "put VALUES { {IDS} } clauses in the info SPARQL inside each UNION, and avoid string operations "
+            "and filters for the index SPARQL wherever possible.",
             "Do not use different scores for the same IRI in the index SPARQL, as the IRIs are required to be "
             "returned in contiguous blocks for the indexing process.",
             f"To include {name} in the index and make them searchable even if they do not have "

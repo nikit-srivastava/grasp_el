@@ -10,45 +10,7 @@ from grasp.sparql.utils import wrap_iri
 from grasp.utils import FunctionCallException
 
 
-def find_frequent_function_definition(
-    kgs: list[str],
-    k: int,
-    extra_params: dict[str, dict] | None = None,
-) -> dict:
-    properties = {
-        "kg": {
-            "type": "string",
-            "enum": kgs,
-            "description": "The knowledge graph to query",
-        },
-        "position": {
-            "type": "string",
-            "enum": ["subject", "property", "object"],
-            "description": "The position to find common values for",
-        },
-        "subject": {
-            "type": ["string", "null"],
-            "description": "IRI constraint for subject position (null for unconstrained)",
-        },
-        "property": {
-            "type": ["string", "null"],
-            "description": "IRI constraint for property position (null for unconstrained)",
-        },
-        "object": {
-            "type": ["string", "null"],
-            "description": "IRI or literal constraint for object position (null for unconstrained)",
-        },
-        "page": {
-            "type": "integer",
-            "description": "Page number (1-indexed) for paginating results (default should be 1)",
-        },
-    }
-    required = ["kg", "position", "subject", "property", "object", "page"]
-
-    if extra_params:
-        properties.update(extra_params)
-        required.extend(extra_params.keys())
-
+def find_frequent_function_definition(kgs: list[str], k: int) -> dict:
     return {
         "name": "find_frequent",
         "description": f"""\
@@ -64,8 +26,35 @@ Or to find the most frequently used properties in Wikidata:
 find_frequent(kg="wikidata", position="property")""",
         "parameters": {
             "type": "object",
-            "properties": properties,
-            "required": required,
+            "properties": {
+                "kg": {
+                    "type": "string",
+                    "enum": kgs,
+                    "description": "The knowledge graph to query",
+                },
+                "position": {
+                    "type": "string",
+                    "enum": ["subject", "property", "object"],
+                    "description": "The position to find common values for",
+                },
+                "subject": {
+                    "type": ["string", "null"],
+                    "description": "IRI constraint for subject position (null for unconstrained)",
+                },
+                "property": {
+                    "type": ["string", "null"],
+                    "description": "IRI constraint for property position (null for unconstrained)",
+                },
+                "object": {
+                    "type": ["string", "null"],
+                    "description": "IRI or literal constraint for object position (null for unconstrained)",
+                },
+                "page": {
+                    "type": "integer",
+                    "description": "Page number (1-indexed) for paginating results (default should be 1)",
+                },
+            },
+            "required": ["kg", "position", "subject", "property", "object", "page"],
             "additionalProperties": False,
         },
         "strict": True,
@@ -84,7 +73,6 @@ def find_frequent(
     known: set[str],
     request_timeout: float | tuple[float, float] | None = None,
     read_timeout: float | None = None,
-    exclude_explored: set[str] | None = None,
 ) -> str:
     if page < 1:
         raise FunctionCallException("Page number must be at least 1")
@@ -117,23 +105,12 @@ def find_frequent(
 
     target_var = f"?{position[0]}"
 
-    exclude_pattern = ""
-    if exclude_explored:
-        exclude_values = " ".join(wrap_iri(iri) for iri in exclude_explored)
-        exclude_pattern = f"FILTER({target_var} NOT IN ({exclude_values}))"
-
     triple_pattern = " ".join(pos_values)
     sparql = f"""\
-SELECT * WHERE {{
-    {{ 
-        SELECT {target_var} (COUNT(*) AS ?freq) WHERE {{
-            {triple_pattern} .
-        }} 
-        GROUP BY {target_var}
-        ORDER BY DESC(?freq) {target_var} 
-    }}
-    {exclude_pattern}
+SELECT {target_var} ?freq WHERE {{
+    {{ SELECT {target_var} (COUNT({target_var}) AS ?freq) {{ {triple_pattern} . }} GROUP BY {target_var} }}
 }}
+ORDER BY DESC(?freq) {target_var} 
 LIMIT {page * k}"""
 
     try:

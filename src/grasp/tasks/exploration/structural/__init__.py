@@ -98,19 +98,7 @@ class StructuralExplorationTask(GraspTask):
     def function_definitions(self) -> list[dict]:
         kgs = [m.kg for m in self.managers]
         functions = note_function_definitions(self.managers)
-        functions.append(
-            find_frequent_function_definition(
-                kgs,
-                self.config.list_k,
-                extra_params={
-                    "exclude_explored": {
-                        "type": "boolean",
-                        "description": "If true, exclude previously explored "
-                        "seed nodes from the results",
-                    },
-                },
-            )
-        )
+        functions.append(find_frequent_function_definition(kgs, self.config.list_k))
         return functions
 
     def call_function(

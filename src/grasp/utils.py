@@ -37,7 +37,7 @@ class FunctionCallException(Exception):
     pass
 
 
-def format_prefixes(prefixes: dict[str, str], indent: int = 0) -> str:
+def format_prefixes(prefixes: dict[str, str] | None = None, indent: int = 0) -> str:
     if not prefixes:
         return "None"
 
@@ -47,7 +47,11 @@ def format_prefixes(prefixes: dict[str, str], indent: int = 0) -> str:
     )
 
 
-def format_notes(notes: list[str], indent: int = 0, enumerated: bool = False) -> str:
+def format_notes(
+    notes: list[str] | None = None,
+    indent: int = 0,
+    enumerated: bool = False,
+) -> str:
     if not notes:
         return "None"
     elif enumerated:
@@ -72,17 +76,19 @@ def format_enumerate(
     )
 
 
-def format_kg_notes(kg_notes: dict[str, list[str]], enumerated: bool = False) -> str:
+def format_kg_notes(
+    kg_notes: dict[str, list[str]] | None = None,
+    enumerated: bool = False,
+) -> str:
     if not kg_notes:
         return "None"
-
     return format_list(
         f'"{kg}":\n{format_notes(notes, indent=2, enumerated=enumerated)}'
         for kg, notes in kg_notes.items()
     )
 
 
-def format_model(model: BaseModel | None) -> str:
+def format_model(model: BaseModel | None = None) -> str:
     if model is None:
         return "None"
     return model.model_dump_json(indent=2)
