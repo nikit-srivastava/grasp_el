@@ -28,6 +28,7 @@ class ModelConfig(BaseModel):
     ] = "openai/completions"
     model_endpoint: str | None = None
     model_api_key: str | None = Field(default=None, exclude=True)
+    model_timeout: float = 120.0
 
     # any additional inference parameters
     model_kwargs: dict[str, Any] = {}
@@ -37,7 +38,6 @@ class ModelConfig(BaseModel):
     parallel_tool_calls: bool = False
     tool_choice: Literal["auto", "required"] = "auto"
     max_completion_tokens: int = 8192  # 8k, leaves enough space for reasoning models
-    completion_timeout: float = 120.0
     num_retries: int = 2
 
 
@@ -99,11 +99,14 @@ class GraspConfig(ModelConfig):
 
 class SpeechToTextConfig(BaseModel):
     model: str = "gpt-4o-mini-transcribe"
-    endpoint: str | None = None
-    api_key: str | None = Field(default=None, exclude=True)
-    timeout: float = 30.0
+    model_endpoint: str | None = None
+    model_api_key: str | None = Field(default=None, exclude=True)
+    model_timeout: float = 30.0
     num_retries: int = 2
-    max_audio_bytes: int = 25 * 1024 * 1024
+    # 2MB by default
+    max_audio_bytes: int = 2 * 1024 * 1024
+    rate_limit: int | None = None
+    rate_limit_window: int = 60
 
 
 class ServerConfig(GraspConfig):
