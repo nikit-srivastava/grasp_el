@@ -107,6 +107,8 @@ class SpeechToTextConfig(BaseModel):
     max_audio_bytes: int = 2 * 1024 * 1024
     rate_limit: int | None = None
     rate_limit_window: int = 60
+    # ISO-639-1 language hint for the STT model; None lets it auto-detect
+    language: str | None = None
 
 
 class ServerConfig(GraspConfig):

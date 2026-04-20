@@ -598,6 +598,7 @@ def serve(config: ServerConfig, log_level: int | str | None = None) -> None:
                 result = stt_client.audio.transcriptions.create(
                     model=stt_config.model,
                     file=(filename, audio_bytes, content_type),
+                    language=stt_config.language,
                 )
                 return result.text
 
@@ -606,6 +607,7 @@ def serve(config: ServerConfig, log_level: int | str | None = None) -> None:
                     asyncio.to_thread(run_transcription),
                     timeout=stt_config.model_timeout + 3.0,
                 )
+                logger.info(f"{prefix} Transcription successful: {text}")
             except asyncio.TimeoutError:
                 logger.warning(f"{prefix} Transcription timed out")
                 raise HTTPException(status_code=504, detail="Transcription timed out")
