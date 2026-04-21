@@ -9,11 +9,15 @@ from pathlib import Path
 import natsort
 import pandas as pd
 import streamlit as st
+from pydantic import ValidationError
 from streamlit_autorefresh import st_autorefresh
 from universal_ml_utils.io import load_json, load_jsonl
+from universal_ml_utils.logging import get_logger
 
 from grasp.model import Message
 from grasp.utils import is_invalid_evaluation, is_invalid_output
+
+logger = get_logger("EVALUATION APP")
 
 # Set page configuration
 st.set_page_config(page_title="SPARQL QA Evaluation", page_icon="📊", layout="wide")
@@ -21,12 +25,10 @@ st.set_page_config(page_title="SPARQL QA Evaluation", page_icon="📊", layout="
 
 def parse_model_name(filename):
     """Parse model name and additional info from filename."""
-    # Remove .jsonl extension
     basename = os.path.basename(filename)
     if basename.endswith(".jsonl"):
         basename = basename[:-6]
 
-    # Split by the first dot
     parts = basename.split(".", 1)
     model_name = parts[0]
     additional_info = parts[1] if len(parts) > 1 else ""
@@ -34,9 +36,54 @@ def parse_model_name(filename):
     return model_name, additional_info
 
 
-# Using universal_ml_utils.io.load_json and load_jsonl functions
+def display_name_from_file(path) -> str:
+    """Build the canonical display name (`name` or `name (info)`) from a file path."""
+    name, info = parse_model_name(Path(path).stem)
+    return f"{name} ({info})" if info else name
 
 
+def _mtime(path) -> float:
+    """Return mtime for cache keying; 0.0 if missing."""
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return 0.0
+
+
+def try_load_model_outputs(path) -> dict:
+    """Load model outputs; return {} on failure and log the reason."""
+    try:
+        return load_model_outputs(str(path), _mtime(path))
+    except Exception as e:
+        logger.warning(f"Failed to load model outputs from {path}: {e}")
+        return {}
+
+
+def try_load_json(path, default=None):
+    """Load a JSON file; return `default` on failure and log the reason."""
+    try:
+        return load_json(str(path))
+    except Exception as e:
+        logger.warning(f"Failed to load JSON file {path}: {e}")
+        return {} if default is None else default
+
+
+@st.cache_data
+def load_rank_json(path: str, mtime: float) -> dict:
+    """Cached load of a ranking JSON file, keyed by path + mtime."""
+    return load_json(path)
+
+
+def try_load_rank_json(path) -> dict:
+    """Load a ranking JSON via cache; return {} on failure and log the reason."""
+    try:
+        return load_rank_json(str(path), _mtime(path))
+    except Exception as e:
+        logger.warning(f"Failed to load ranking file {path}: {e}")
+        return {}
+
+
+@st.cache_data(ttl=30)
 def load_available_data():
     """Find all available benchmarks and models."""
     data_root = Path(sys.argv[1])
@@ -76,20 +123,13 @@ def load_available_data():
                     if kg not in benchmarks:
                         benchmarks[kg] = {}
 
-                    # Parse model names and additional info
-                    models_info = {}
-                    for model_file, eval_file in model_files:
-                        model_name, additional_info = parse_model_name(model_file.stem)
-                        display_name = (
-                            f"{model_name} ({additional_info})"
-                            if additional_info
-                            else model_name
-                        )
-
-                        models_info[display_name] = {
+                    models_info = {
+                        display_name_from_file(model_file): {
                             "output_file": str(model_file),
                             "eval_file": str(eval_file),
                         }
+                        for model_file, eval_file in model_files
+                    }
 
                     benchmarks[kg][benchmark] = {
                         "test_file": str(test_file),
@@ -99,6 +139,7 @@ def load_available_data():
     return benchmarks
 
 
+@st.cache_data(ttl=30)
 def load_ranking_data():
     """Find all available ranking evaluation files, organized by ranking filename."""
     data_root = Path(sys.argv[1])
@@ -134,12 +175,16 @@ def load_ranking_data():
     return rankings
 
 
-def load_model_outputs(output_file):
-    """Load model outputs from a JSONL file and convert to dictionary by ID."""
+@st.cache_data
+def load_model_outputs(output_file: str, mtime: float) -> dict:
+    """Load model outputs from a JSONL file and convert to dictionary by ID.
+
+    Cached on (path, mtime) so repeated reruns hit the cache and file edits
+    invalidate it automatically.
+    """
     outputs_list = load_jsonl(output_file)
     outputs_dict = {}
 
-    # Convert list to dictionary by ID
     for output in outputs_list:
         if output is None:
             continue
@@ -271,28 +316,15 @@ def load_and_process_data(
         output_file = model_files["output_file"]
         eval_file = model_files["eval_file"]
 
-        # Load model output file
-        try:
-            model_outputs[model_name] = load_model_outputs(output_file)
-        except Exception as e:
-            # Log error but don't display in UI
-            print(f"Error loading model output file {output_file}: {e}")
-            model_outputs[model_name] = {}
+        model_outputs[model_name] = try_load_model_outputs(output_file)
 
-        # Load evaluation data
-        try:
-            eval_data = load_json(eval_file)
-            # restrict to those for which we have model outputs
-            eval_data = {
-                id: eval
-                for id, eval in eval_data.items()
-                if id in model_outputs[model_name]
-            }
-            model_eval_data[model_name] = eval_data
-        except Exception as e:
-            # Log error but don't display in UI
-            print(f"Error loading evaluation file {eval_file}: {e}")
-            model_eval_data[model_name] = {}
+        eval_data = try_load_json(eval_file, default={})
+        # Restrict to ids for which we have model outputs
+        model_eval_data[model_name] = {
+            id: ev
+            for id, ev in eval_data.items()
+            if id in model_outputs[model_name]
+        }
 
     # Find common ids that are valid (output and evaluation) across
     # all SELECTED models (only those in model_info)
@@ -542,11 +574,7 @@ def show_predictions_view(available_data):
     config_file = available_models[selected_model]["output_file"].replace(
         ".jsonl", ".config.json"
     )
-    try:
-        config_data = load_json(config_file)
-    except Exception as e:
-        print(f"Error loading config file {config_file}: {e}")
-        config_data = {}
+    config_data = try_load_json(config_file, default={})
 
     # Get outputs and evaluations for the selected model
     model_name = selected_model
@@ -749,8 +777,10 @@ def show_predictions_view(available_data):
                         st.markdown("---")
 
                 return
-            except Exception:
-                pass
+            except (TypeError, ValueError, KeyError, ValidationError) as e:
+                logger.warning(
+                    f"New-format message parsing failed, falling back to legacy: {e}"
+                )
 
         # fallback to old message format
         def display_tool_call(call, tool_responses):
@@ -816,7 +846,7 @@ def show_predictions_view(available_data):
                 st.markdown("---")
 
 
-def validate_ranking_consistency(benchmark_entries):
+def validate_ranking_consistency(benchmark_entries, rank_data_by_path):
     """
     Validate consistency across ranking files.
 
@@ -834,39 +864,25 @@ def validate_ranking_consistency(benchmark_entries):
     for entry in benchmark_entries:
         kg = entry["kg"]
         benchmark = entry["benchmark"]
-        rank_file = entry["filepath"]
-
-        try:
-            rank_data = load_json(rank_file)
-
-            # Collect judge config
-            if "judge_config" in rank_data:
-                judge_key = f"{kg}/{benchmark}"
-                judge_configs[judge_key] = rank_data["judge_config"]
-
-            # Collect and validate prediction file paths
-            if "summary" in rank_data:
-                prediction_files = set()
-                for key in rank_data["summary"].keys():
-                    if key != "tie":
-                        # Extract basename for comparison
-                        file_path = Path(key)
-                        prediction_files.add(file_path.stem)
-
-                        # Check if prediction file path matches the KG/benchmark context
-                        # The key should be a relative path like "outputs/model.jsonl"
-                        # We need to verify it's from the same kg/benchmark
-                        if "../" in key or key.startswith("/"):
-                            path_issues.append(
-                                f"{kg}/{benchmark}: Prediction file '{key}' uses absolute or parent directory path"
-                            )
-
-                benchmark_key = f"{kg}/{benchmark}"
-                prediction_file_sets[benchmark_key] = prediction_files
-
-        except Exception as e:
-            st.warning(f"Error loading ranking file {rank_file}: {e}")
+        rank_data = rank_data_by_path.get(entry["filepath"])
+        if not rank_data:
             continue
+
+        if "judge_config" in rank_data:
+            judge_configs[f"{kg}/{benchmark}"] = rank_data["judge_config"]
+
+        if "summary" in rank_data:
+            prediction_files = set()
+            for key in rank_data["summary"].keys():
+                if key == "tie":
+                    continue
+                prediction_files.add(Path(key).stem)
+                if "../" in key or key.startswith("/"):
+                    path_issues.append(
+                        f"{kg}/{benchmark}: Prediction file '{key}' uses "
+                        "absolute or parent directory path"
+                    )
+            prediction_file_sets[f"{kg}/{benchmark}"] = prediction_files
 
     # Check 1: Judge model consistency
     if judge_configs:
@@ -935,12 +951,7 @@ def show_ranking_view(ranking_data):
         "Select Ranking Comparison", ranking_options, index=0
     )
 
-    # Parse and display the ranking name nicely
-    model_name, additional_info = parse_model_name(selected_ranking)
-    display_name = (
-        f"{model_name} ({additional_info})" if additional_info else model_name
-    )
-
+    display_name = display_name_from_file(selected_ranking)
     st.subheader(f"Comparison: {display_name}")
 
     # Get all benchmarks for this ranking
@@ -950,8 +961,14 @@ def show_ranking_view(ranking_data):
         st.warning(f"No benchmark data found for {selected_ranking}.")
         return
 
+    # Load each rank file at most once per rerun (cache hits across reruns)
+    rank_data_by_path = {
+        entry["filepath"]: try_load_rank_json(entry["filepath"])
+        for entry in benchmark_entries
+    }
+
     # Validate consistency across all ranking files
-    validate_ranking_consistency(benchmark_entries)
+    validate_ranking_consistency(benchmark_entries, rank_data_by_path)
 
     # Organize benchmarks by knowledge graph for selection
     entries_by_kg = defaultdict(list)
@@ -997,44 +1014,31 @@ def show_ranking_view(ranking_data):
     # Extract judge model information from the first available ranking file
     judge_model_info = None
     for entry in benchmark_entries:
-        try:
-            rank_data = load_json(entry["filepath"])
-            if "judge_config" in rank_data and "model" in rank_data["judge_config"]:
-                judge_model_info = rank_data["judge_config"]["model"]
-                break
-        except Exception:
-            continue
+        rank_data = rank_data_by_path.get(entry["filepath"], {})
+        model = rank_data.get("judge_config", {}).get("model")
+        if model:
+            judge_model_info = model
+            break
 
-    # Display judge model if found
     if judge_model_info:
         st.caption(f"**Judge Model:** {judge_model_info}")
 
     # First pass: collect all unique models across all benchmarks to establish global ordering
     sorted_models = None
     for entry in benchmark_entries:
-        try:
-            rank_data = load_json(entry["filepath"])
-
-            prediction_models = []
-            for file in rank_data["prediction_files"]:
-                file_path = Path(file)
-                model_name_parsed, additional_info_parsed = parse_model_name(
-                    file_path.stem
-                )
-                model_display_name = (
-                    f"{model_name_parsed} ({additional_info_parsed})"
-                    if additional_info_parsed
-                    else model_name_parsed
-                )
-                prediction_models.append(model_display_name)
-
-            if sorted_models is None:
-                sorted_models = prediction_models
-            elif sorted(sorted_models) != sorted(prediction_models):
-                sorted_models = None
-                break
-        except Exception:
+        rank_data = rank_data_by_path.get(entry["filepath"])
+        if not rank_data or "prediction_files" not in rank_data:
             continue
+
+        prediction_models = [
+            display_name_from_file(f) for f in rank_data["prediction_files"]
+        ]
+
+        if sorted_models is None:
+            sorted_models = prediction_models
+        elif sorted(sorted_models) != sorted(prediction_models):
+            sorted_models = None
+            break
 
     if sorted_models is None:
         st.warning(
@@ -1064,8 +1068,7 @@ def show_ranking_view(ranking_data):
         rank_file = entry["filepath"]
 
         try:
-            rank_data = load_json(rank_file)
-
+            rank_data = rank_data_by_path.get(rank_file, {})
             if "summary" not in rank_data:
                 continue
 
@@ -1073,19 +1076,12 @@ def show_ranking_view(ranking_data):
 
             # Load model outputs to calculate additional metrics
             rank_dir = Path(rank_file).parent
-            model_outputs_cache = {}
+            model_outputs_cache = {
+                key: try_load_model_outputs(rank_dir.parent / "outputs" / Path(key).name)
+                for key in summary.keys()
+                if key != "tie"
+            }
 
-            for key in summary.keys():
-                if key != "tie":
-                    # Key is a path relative to the data root, resolve it relative to rank_dir
-                    output_file = rank_dir.parent / "outputs" / Path(key).name
-                    try:
-                        model_outputs_cache[key] = load_model_outputs(str(output_file))
-                    except Exception as e:
-                        print(f"Failed to load {output_file}: {e}")
-                        model_outputs_cache[key] = {}
-
-            # Get evaluation counts
             total_evals = len(rank_data.get("evaluations", {}))
             valid_evals = sum(
                 1
@@ -1093,43 +1089,30 @@ def show_ranking_view(ranking_data):
                 if eval_data.get("err") is None
             )
 
-            # Build a single row for this benchmark
             row_data = {
                 "KG": kg,
                 "Benchmark": benchmark,
                 "Valid Evals": f"{valid_evals}/{total_evals}",
             }
 
-            # Initialize wins, steps, and time for each model
             model_wins = {}
             model_steps = {}
             model_time = {}
             tie_count = 0
 
-            # Process each model in the summary
             for key, value in summary.items():
                 if key == "tie":
                     tie_count = value["count"]
-                else:
-                    # Parse model name from the prediction file path
-                    file_path = Path(key)
-                    model_name_parsed, additional_info_parsed = parse_model_name(
-                        file_path.stem
-                    )
-                    model_display_name = (
-                        f"{model_name_parsed} ({additional_info_parsed})"
-                        if additional_info_parsed
-                        else model_name_parsed
-                    )
+                    continue
 
-                    # Calculate average metrics
-                    avg_steps, avg_time = calculate_average_steps_and_time(
-                        model_outputs_cache.get(key, {})
-                    )
+                model_display_name = display_name_from_file(key)
+                avg_steps, avg_time = calculate_average_steps_and_time(
+                    model_outputs_cache.get(key, {})
+                )
 
-                    model_wins[model_display_name] = value["count"]
-                    model_steps[model_display_name] = avg_steps
-                    model_time[model_display_name] = avg_time
+                model_wins[model_display_name] = value["count"]
+                model_steps[model_display_name] = avg_steps
+                model_time[model_display_name] = avg_time
 
             # Calculate total for percentages
             total_comparisons = sum(model_wins.values()) + tie_count
@@ -1233,10 +1216,9 @@ def show_ranking_view(ranking_data):
     if not selected_entry:
         return
 
-    try:
-        selected_rank_data = load_json(selected_entry["filepath"])
-    except Exception as exc:
-        st.warning(f"Failed to load ranking data for detailed view: {exc}")
+    selected_rank_data = rank_data_by_path.get(selected_entry["filepath"])
+    if not selected_rank_data:
+        st.warning("Failed to load ranking data for detailed view.")
         return
 
     evaluations = selected_rank_data.get("evaluations", {})
@@ -1250,7 +1232,7 @@ def show_ranking_view(ranking_data):
     try:
         ground_truth_examples = load_jsonl(test_file)
     except Exception as exc:
-        print(f"Failed to load test file {test_file}: {exc}")
+        logger.warning(f"Failed to load test file {test_file}: {exc}")
         ground_truth_examples = []
 
     id_to_question = {}
@@ -1290,15 +1272,9 @@ def show_ranking_view(ranking_data):
     seen_models = set()
 
     for path in selected_rank_data["prediction_files"]:
-        file_path = Path(path)
-        model_name_parsed, additional_info_parsed = parse_model_name(file_path.stem)
-        model_display_name = (
-            f"{model_name_parsed} ({additional_info_parsed})"
-            if additional_info_parsed
-            else model_name_parsed
-        )
+        model_display_name = display_name_from_file(path)
+        output_path = outputs_dir / Path(path).name
 
-        output_path = outputs_dir / file_path.name
         summary_model_entries.append(
             {
                 "display_name": model_display_name,
@@ -1310,12 +1286,7 @@ def show_ranking_view(ranking_data):
         if model_display_name in seen_models:
             continue
 
-        try:
-            model_outputs[model_display_name] = load_model_outputs(str(output_path))
-        except Exception as exc:
-            print(f"Failed to load model outputs from {output_path}: {exc}")
-            model_outputs[model_display_name] = {}
-
+        model_outputs[model_display_name] = try_load_model_outputs(output_path)
         model_display_order.append(model_display_name)
         seen_models.add(model_display_name)
 
@@ -1379,13 +1350,7 @@ def show_ranking_view(ranking_data):
                     if isinstance(output_field, dict):
                         output_payload = output_field
 
-                container_cm = None
-                try:
-                    container_cm = col.container(border=True)
-                except TypeError:
-                    container_cm = col.container()
-
-                with container_cm:
+                with col.container(border=True):
                     st.markdown(f"**{model_name}**")
 
                     if not output_entry:
@@ -1535,22 +1500,11 @@ def show_comprehensive_view(available_data):
                     if kg_name not in all_metrics[model_name]:
                         all_metrics[model_name][kg_name] = {}
 
-                    # Extract or calculate metrics values
-                    num_outputs = model_metrics["num_outputs"]
-                    num_evaluations = model_metrics["num_evaluations"]
-                    num_without_evaluation = num_outputs - num_evaluations
-                    num_invalid_outputs = model_metrics["num_invalid_outputs"]
-
                     all_metrics[model_name][kg_name][benchmark_name] = {
                         "avg_f1": model_metrics["f1"],
                         "accuracy": model_metrics["accuracy"],
-                        "predictions": num_outputs,
-                        "evaluated": num_evaluations,
-                        "without_evaluation": num_without_evaluation,
-                        "avg_time": model_metrics.get("time", 0),
-                        "invalid_targets": model_metrics["num_invalid_evaluations"],
-                        "invalid_preds": num_invalid_outputs,
-                        "invalid_evaluation": 0,  # Not tracked separately
+                        "evaluated": model_metrics["num_evaluations"],
+                        "invalid_preds": model_metrics["num_invalid_outputs"],
                     }
 
     # If there are no metrics, show a warning and return
@@ -1656,28 +1610,11 @@ def show_comprehensive_view(available_data):
                     and benchmark in all_metrics[model_name][kg]
                 ):
                     metrics_data = all_metrics[model_name][kg][benchmark]
-
-                    # Format the selected metric value
-                    if metric_key in ["avg_f1", "accuracy"]:
-                        # Format as percentage with 1 decimal
-                        value = metrics_data[metric_key] * 100
-                        # Show as 0 if predicted examples is 0
-                        if metrics_data["evaluated"] == 0 and metric_key != "evaluated":
-                            formatted_value = "0.0"
-                        else:
-                            formatted_value = f"{value:.1f}"
-                    elif metric_key == "avg_time":
-                        # Format time with 3 decimals
-                        value = metrics_data[metric_key]
-                        formatted_value = f"{value:.3f}"
-                    elif metric_key in ["evaluated", "predictions"]:
-                        # For count metrics, show as integer
-                        formatted_value = str(int(metrics_data[metric_key]))
+                    # Percentage with 1 decimal; 0.0 if nothing was evaluated
+                    if metrics_data["evaluated"] == 0:
+                        row.append("0.0")
                     else:
-                        # For any other metrics
-                        formatted_value = str(metrics_data[metric_key])
-
-                    row.append(formatted_value)
+                        row.append(f"{metrics_data[metric_key] * 100:.1f}")
                 else:
                     row.append("—")  # Em dash for missing data
 
@@ -1690,163 +1627,45 @@ def show_comprehensive_view(available_data):
     st.subheader(f"{selected_metric} Across All Knowledge Graphs and Benchmarks")
 
     # Find best and second-best models for each benchmark
-    if metric_key in ["avg_f1", "accuracy"]:
-        # Dictionary to store rankings for each KG-benchmark pair
-        rankings = {}
+    rankings = {}
+    for kg in sorted_kgs:
+        for benchmark in sorted(kg_benchmarks[kg]):
+            model_values = []
+            for model_name, per_kg in all_metrics.items():
+                metrics_data = per_kg.get(kg, {}).get(benchmark)
+                if metrics_data and metrics_data["evaluated"] > 0:
+                    model_values.append((model_name, metrics_data[metric_key]))
 
-        # For each KG-benchmark combination, find the best and second-best models
-        for kg in sorted_kgs:
-            for benchmark in sorted(kg_benchmarks[kg]):
-                # Collect all values for this benchmark
-                model_values = []
-                for model_name in all_metrics:
-                    if (
-                        kg in all_metrics[model_name]
-                        and benchmark in all_metrics[model_name][kg]
-                    ):
-                        metrics_data = all_metrics[model_name][kg][benchmark]
-                        # Only rank if there are evaluated examples
-                        if metrics_data["evaluated"] > 0:
-                            model_values.append((model_name, metrics_data[metric_key]))
+            model_values.sort(key=lambda x: x[1], reverse=True)
+            rankings[(kg, benchmark)] = {
+                model: rank for rank, (model, _) in enumerate(model_values)
+            }
 
-                # Sort by metric value in descending order
-                model_values.sort(key=lambda x: x[1], reverse=True)
+    # Build a per-cell CSS style DataFrame mirroring df's shape
+    style_df = pd.DataFrame("", index=df.index, columns=df.columns)
+    for i in range(len(df.index)):
+        model_name = df.iloc[i, 0]
+        for j, col in enumerate(df.columns[1:], 1):
+            if df.iloc[i, j] == "—":
+                style_df.iloc[i, j] = "background-color: #444444; color: #ffffff"
+                continue
 
-                # Store the rankings
-                rankings[(kg, benchmark)] = {
-                    model: rank for rank, (model, _) in enumerate(model_values)
-                }
+            kg, benchmark = col
+            cell_metrics = all_metrics.get(model_name, {}).get(kg, {}).get(benchmark)
+            if cell_metrics and cell_metrics.get("invalid_preds", 0) > 0:
+                style_df.iloc[i, j] = "background-color: #990000; color: white"
+                continue
 
-        # Create style dictionaries based on rankings
+            rank = rankings.get((kg, benchmark), {}).get(model_name)
+            if rank == 0:
+                style_df.iloc[i, j] = (
+                    "background-color: #005500; color: white; font-weight: bold"
+                )
+            elif rank == 1:
+                style_df.iloc[i, j] = "background-color: #003366; color: white"
 
-        # Create a style DataFrame with the same shape as our data DataFrame
-        style_df = pd.DataFrame("", index=df.index, columns=df.columns)
-
-        # Fill in the style DataFrame with CSS styles
-        for i, row_idx in enumerate(df.index):
-            model_name = df.iloc[i, 0]  # Get model name from first column
-            for j, col in enumerate(df.columns[1:], 1):  # Skip the first column (Model)
-                cell_value = df.iloc[i, j]
-                if cell_value == "—":
-                    style_df.iloc[i, j] = "background-color: #444444; color: #ffffff"
-                else:
-                    kg, benchmark = col
-                    # Check if this is an invalid model output
-                    for model_name_key, metric_data in all_metrics.items():
-                        if (
-                            model_name == model_name_key
-                            and kg in metric_data
-                            and benchmark in metric_data[kg]
-                        ):
-                            if (
-                                "invalid_preds" in metric_data[kg][benchmark]
-                                and metric_data[kg][benchmark]["invalid_preds"] > 0
-                            ):
-                                # Apply red color to indicate invalid output
-                                style_df.iloc[i, j] = (
-                                    "background-color: #990000; color: white"
-                                )
-                                break
-
-                    # Apply ranking colors if not invalid and in rankings
-                    if (
-                        not style_df.iloc[i, j]
-                        and (kg, benchmark) in rankings
-                        and model_name in rankings[(kg, benchmark)]
-                    ):
-                        rank = rankings[(kg, benchmark)][model_name]
-                        if rank == 0:  # Best model
-                            style_df.iloc[i, j] = (
-                                "background-color: #005500; color: white; font-weight: bold"
-                            )
-                        elif rank == 1:  # Second best
-                            style_df.iloc[i, j] = (
-                                "background-color: #003366; color: white"
-                            )
-
-        # Apply the styling directly
-        styled_df = df.style.apply(lambda _: style_df, axis=None)
-        st.dataframe(styled_df, width="stretch")
-    else:
-        # For count metrics, use similar ranking logic
-        # Dictionary to store rankings for each KG-benchmark pair
-        rankings = {}
-
-        # For each KG-benchmark combination, find the best and second-best models
-        for kg in sorted_kgs:
-            for benchmark in sorted(kg_benchmarks[kg]):
-                # Collect all values for this benchmark
-                model_values = []
-                for model_name, row_idx in zip(
-                    sorted(all_metrics.keys()), range(len(df))
-                ):
-                    cell_value = df.iloc[row_idx][kg, benchmark]
-                    if cell_value != "—":
-                        try:
-                            # Convert to number for ranking
-                            val = int(cell_value)
-                            model_values.append((model_name, val))
-                        except ValueError:
-                            continue
-
-                # Sort by metric value in descending order
-                model_values.sort(key=lambda x: x[1], reverse=True)
-
-                # Store the rankings
-                rankings[(kg, benchmark)] = {
-                    model: rank for rank, (model, _) in enumerate(model_values)
-                }
-
-        # Use direct styling with style_df instead of functions
-
-        # Create a style DataFrame with the same shape as our data DataFrame
-        style_df = pd.DataFrame("", index=df.index, columns=df.columns)
-
-        # Fill in the style DataFrame with CSS styles
-        for i, row_idx in enumerate(df.index):
-            model_name = df.iloc[i, 0]  # Get model name from first column
-            for j, col in enumerate(df.columns[1:], 1):  # Skip the first column (Model)
-                cell_value = df.iloc[i, j]
-                if cell_value == "—":
-                    style_df.iloc[i, j] = "background-color: #444444; color: #ffffff"
-                else:
-                    kg, benchmark = col
-                    # Check if this is an invalid model output
-                    for model_name_key, metric_data in all_metrics.items():
-                        if (
-                            model_name == model_name_key
-                            and kg in metric_data
-                            and benchmark in metric_data[kg]
-                        ):
-                            if (
-                                "invalid_preds" in metric_data[kg][benchmark]
-                                and metric_data[kg][benchmark]["invalid_preds"] > 0
-                            ):
-                                # Apply red color to indicate invalid output
-                                style_df.iloc[i, j] = (
-                                    "background-color: #990000; color: white"
-                                )
-                                break
-
-                    # Apply ranking colors if not invalid and in rankings
-                    if (
-                        not style_df.iloc[i, j]
-                        and (kg, benchmark) in rankings
-                        and model_name in rankings[(kg, benchmark)]
-                    ):
-                        rank = rankings[(kg, benchmark)][model_name]
-                        if rank == 0:  # Best model
-                            style_df.iloc[i, j] = (
-                                "background-color: #005500; color: white; font-weight: bold"
-                            )
-                        elif rank == 1:  # Second best
-                            style_df.iloc[i, j] = (
-                                "background-color: #003366; color: white"
-                            )
-
-        # Apply the styling directly
-        styled_df = df.style.apply(lambda _: style_df, axis=None)
-        st.dataframe(styled_df, width="stretch")
+    styled_df = df.style.apply(lambda _: style_df, axis=None)
+    st.dataframe(styled_df, width="stretch")
 
     # Add a note about the data and color coding
     st.caption(
