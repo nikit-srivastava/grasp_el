@@ -734,7 +734,7 @@ class KgManager:
         self,
         prefix: str,
         limit: int | None = None,
-    ) -> tuple[str, Position]:
+    ) -> tuple[str | None, Position]:
         return derive_constraint_query_from_prefix(
             prefix,
             self.sparql_parser,

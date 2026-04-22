@@ -213,6 +213,7 @@ class TestDeriveConstraintQueryFromPrefix:
         prefix = _prefix_from_marked_query(query)
         result, _ = derive_constraint_query_from_prefix(prefix, SPARQL_PARSER)
 
+        assert result is not None
         assert "?a <http://example.org/p1> ?b" in result
         assert "?b <http://example.org/p2>" in result
         assert "<http://example.org/p3>" not in result
@@ -230,6 +231,7 @@ class TestDeriveConstraintQueryFromPrefix:
         prefix = _prefix_from_marked_query(query)
         result, _ = derive_constraint_query_from_prefix(prefix, SPARQL_PARSER)
 
+        assert result is not None
         assert "?a <http://example.org/p1> ?b" in result
         assert "?b <http://example.org/p2>" in result
         assert "?x <http://example.org/p3> ?y" not in result
@@ -247,11 +249,12 @@ class TestDeriveConstraintQueryFromPrefix:
         prefix = _prefix_from_marked_query(query)
         result, _ = derive_constraint_query_from_prefix(prefix, SPARQL_PARSER)
 
+        assert result is not None
         assert "?a <http://example.org/p1> ?b" in result
         assert "?b <http://example.org/p2> ?c" in result
         assert "?c <http://example.org/p3>" in result
 
-    def test_raises_when_no_connected_top_level_triples_exist(self):
+    def test_raises_when_placeholder_is_not_in_a_triple(self):
         query = (
             "SELECT ?z WHERE { ?a <http://example.org/p1> ?z . FILTER(?z != <CUR>) }"
         )
@@ -259,3 +262,63 @@ class TestDeriveConstraintQueryFromPrefix:
         prefix = _prefix_from_marked_query(query)
         with pytest.raises(SPARQLException):
             derive_constraint_query_from_prefix(prefix, SPARQL_PARSER)
+
+    def test_ignores_triples_inside_optional(self):
+        query = (
+            "SELECT ?a WHERE { "
+            "OPTIONAL { ?a <http://example.org/p2> ?c } . "
+            "?a <http://example.org/p1> <CUR> "
+            "}"
+        )
+
+        prefix = _prefix_from_marked_query(query)
+        result, _ = derive_constraint_query_from_prefix(prefix, SPARQL_PARSER)
+
+        assert result is not None
+        assert "?a <http://example.org/p1>" in result
+        assert "http://example.org/p2" not in result
+
+    def test_ignores_triples_inside_union(self):
+        query = (
+            "SELECT ?a WHERE { "
+            "{ ?a <http://example.org/p2> ?b } UNION { ?a <http://example.org/p3> ?c } . "
+            "?a <http://example.org/p1> <CUR> "
+            "}"
+        )
+
+        prefix = _prefix_from_marked_query(query)
+        result, _ = derive_constraint_query_from_prefix(prefix, SPARQL_PARSER)
+
+        assert result is not None
+        assert "?a <http://example.org/p1>" in result
+        assert "http://example.org/p2" not in result
+        assert "http://example.org/p3" not in result
+
+    def test_ignores_triples_inside_minus(self):
+        query = (
+            "SELECT ?a WHERE { "
+            "?a <http://example.org/p1> ?b . "
+            "MINUS { ?b <http://example.org/p2> ?c } . "
+            "?b <http://example.org/p3> <CUR> "
+            "}"
+        )
+
+        prefix = _prefix_from_marked_query(query)
+        result, _ = derive_constraint_query_from_prefix(prefix, SPARQL_PARSER)
+
+        assert result is not None
+        assert "?a <http://example.org/p1> ?b" in result
+        assert "?b <http://example.org/p3>" in result
+        assert "http://example.org/p2" not in result
+
+    def test_returns_none_constraint_inside_optional(self):
+        query = (
+            "SELECT ?a WHERE { "
+            "?a <http://example.org/p1> ?b . "
+            "OPTIONAL { ?b <http://example.org/p2> <CUR> } "
+            "}"
+        )
+
+        prefix = _prefix_from_marked_query(query)
+        result, _ = derive_constraint_query_from_prefix(prefix, SPARQL_PARSER)
+        assert result is None

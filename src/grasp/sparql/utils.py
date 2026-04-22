@@ -394,26 +394,29 @@ def complete_prefix(
         except Exception:
             continue
 
-        if not find_connected_top_level_triples(parse, current_var):
-            continue
-
-        return parse, position, current_var
+        if var_in_triple(parse, current_var):
+            return parse, position, current_var
 
     raise SPARQLException("Failed to complete SPARQL prefix", prefix)
 
 
-def infer_position_from_prefix(
-    prefix: str,
-    parser: LR1Parser,
-) -> Position:
+def var_in_triple(parse: dict, var: str) -> bool:
+    return any(
+        any(
+            child.get("value") == var
+            for v in find_all(triple, "Var")
+            for child in v.get("children", [])
+        )
+        for triple in find_all(parse, "TriplesSameSubjectPath")
+    )
+
+
+def infer_position_from_prefix(prefix: str, parser: LR1Parser) -> Position:
     _, position, _ = complete_prefix(prefix, parser)
     return position
 
 
-def find_connected_top_level_triples(
-    parse: dict,
-    select_var: str,
-) -> list[str]:
+def find_connected_top_level_triples(parse: dict, select_var: str) -> list[str]:
     triple_blocks = list(
         find_all(
             parse,
@@ -459,14 +462,13 @@ def derive_constraint_query_from_prefix(
     prefix: str,
     parser: LR1Parser,
     limit: int | None = None,
-) -> tuple[str, Position]:
+) -> tuple[str | None, Position]:
     parse, position, select_var = complete_prefix(prefix, parser)
 
     triple_blocks = find_connected_top_level_triples(parse, select_var)
 
     if not triple_blocks:
-        # if there are no triple blocks, skip since we do not have constraints
-        raise SPARQLException("Failed to derive constraint query from prefix", prefix)
+        return None, position
 
     final_query = (
         f"SELECT DISTINCT {select_var} WHERE {{ " + " . ".join(triple_blocks) + " }"
