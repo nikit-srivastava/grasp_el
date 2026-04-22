@@ -540,6 +540,13 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="User notes for the property index (property index and info SPARQL)",
     )
+    auto_setup_parser.add_argument(
+        "phases",
+        nargs="?",
+        choices=["all", "info", "indices", "entity-index", "property-index"],
+        default="all",
+        help="Which phase(s) to run (default: all)",
+    )
 
     # visualize trace from GRASP output
     show_parser = subparsers.add_parser(
@@ -844,11 +851,19 @@ def auto_setup_grasp(args: argparse.Namespace) -> None:
     # run phases sequentially: info first (so prefixes are available),
     # then entity index, then property index
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    phases = [
-        {"phase": "info", "notes": args.info_notes},
-        {"phase": "index", "name": "entities", "notes": args.entity_index_notes},
-        {"phase": "index", "name": "properties", "notes": args.property_index_notes},
+    all_phases = [
+        ("info", {"phase": "info", "notes": args.info_notes}),
+        ("entity-index", {"phase": "index", "name": "entities", "notes": args.entity_index_notes}),
+        ("property-index", {"phase": "index", "name": "properties", "notes": args.property_index_notes}),
     ]
+    selected = {
+        "all": {"info", "entity-index", "property-index"},
+        "info": {"info"},
+        "indices": {"entity-index", "property-index"},
+        "entity-index": {"entity-index"},
+        "property-index": {"property-index"},
+    }[args.phases]
+    phases = [payload for tag, payload in all_phases if tag in selected]
 
     def dump_latest(path: str, payload, text: bool = False) -> str:
         # write to a timestamped sibling, then point `path` at it via a
