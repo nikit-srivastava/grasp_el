@@ -391,6 +391,32 @@ class TestDeriveConstraintQueryFromPrefix:
         assert "?b <http://example.org/p3>" in result
         assert "http://example.org/p2" not in result
 
+    def test_returns_none_for_single_all_variable_triple(self):
+        query = "SELECT ?x WHERE { ?s ?p <CUR> }"
+        prefix = _prefix_from_marked_query(query)
+        # ?s ?p is two vars — but object position is the cursor, so triple is ?s ?p ?cursor
+        result, _ = derive_constraint_query_from_prefix(prefix, SPARQL_PARSER)
+        assert result is None
+
+    def test_returns_constraint_for_single_triple_with_iri_predicate(self):
+        query = "SELECT ?x WHERE { ?s <http://example.org/p1> <CUR> }"
+        prefix = _prefix_from_marked_query(query)
+        result, _ = derive_constraint_query_from_prefix(prefix, SPARQL_PARSER)
+        assert result is not None
+        assert "<http://example.org/p1>" in result
+
+    def test_returns_constraint_for_two_all_variable_triples(self):
+        query = (
+            "SELECT ?x WHERE { "
+            "?a ?b ?x . "
+            "?x ?c <CUR> "
+            "}"
+        )
+        prefix = _prefix_from_marked_query(query)
+        result, _ = derive_constraint_query_from_prefix(prefix, SPARQL_PARSER)
+        assert result is not None
+        assert "?a ?b ?x" in result
+
     def test_returns_none_constraint_inside_optional(self):
         query = (
             "SELECT ?a WHERE { "

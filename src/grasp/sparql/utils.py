@@ -411,12 +411,16 @@ def var_in_triple(parse: dict, var: str) -> bool:
     )
 
 
+def var_only_triple(triple: dict) -> bool:
+    return len(list(find_all(triple, "Var"))) == 3
+
+
 def infer_position_from_prefix(prefix: str, parser: LR1Parser) -> Position:
     _, position, _ = complete_prefix(prefix, parser)
     return position
 
 
-def find_connected_top_level_triples(parse: dict, select_var: str) -> list[str]:
+def find_connected_top_level_triple_nodes(parse: dict, select_var: str) -> list[dict]:
     triple_blocks = list(
         find_all(
             parse,
@@ -455,7 +459,14 @@ def find_connected_top_level_triples(parse: dict, select_var: str) -> list[str]:
             reachable_vars.update(var_set)
             changed = True
 
-    return [parse_to_string(triple_blocks[i]) for i in sorted(keep)]
+    return [triple_blocks[i] for i in sorted(keep)]
+
+
+def find_connected_top_level_triples(parse: dict, select_var: str) -> list[str]:
+    return [
+        parse_to_string(node)
+        for node in find_connected_top_level_triple_nodes(parse, select_var)
+    ]
 
 
 def derive_constraint_query_from_prefix(
@@ -465,11 +476,15 @@ def derive_constraint_query_from_prefix(
 ) -> tuple[str | None, Position]:
     parse, position, select_var = complete_prefix(prefix, parser)
 
-    triple_blocks = find_connected_top_level_triples(parse, select_var)
+    triple_nodes = find_connected_top_level_triple_nodes(parse, select_var)
 
-    if not triple_blocks:
+    if not triple_nodes:
         return None, position
 
+    if len(triple_nodes) == 1 and var_only_triple(triple_nodes[0]):
+        return None, position
+
+    triple_blocks = [parse_to_string(node) for node in triple_nodes]
     final_query = (
         f"SELECT DISTINCT {select_var} WHERE {{ " + " . ".join(triple_blocks) + " }"
     )

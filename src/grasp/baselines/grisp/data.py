@@ -331,11 +331,12 @@ def find_alternative_groups(
                 prefix,
                 limit=None if max_candidates is None else max_candidates + 1,
             )
+            logger.debug(f"Derived constraint SPARQL:\n{constraint_sparql}")
         else:
             position = infer_position_from_prefix(prefix, manager.sparql_parser)
 
         logger.debug(
-            f"Determined query type and position from prefix: "
+            f"Determined query type and position: "
             f"'{sparql_query_type}', '{position.value}'"
         )
     except Exception as e:
@@ -358,7 +359,7 @@ def find_alternative_groups(
         obj_type = obj_types[0]
         try:
             logger.debug(
-                f"Searching for fitting IRIs at position {position.value} "
+                f"Searching for candidate IRIs at position {position.value} "
                 f"with constraint SPARQL:\n{constraint_sparql}"
             )
             identifier_map = manager.get_candidate_ids(
@@ -370,20 +371,19 @@ def find_alternative_groups(
                 read_timeout=3.0,
             )
             logger.debug(
-                f"Got {len(identifier_map)} fitting IRIs for position {position.value}"
+                f"Got {len(identifier_map)} candidate IRIs for position {position.value}"
             )
             identifier_maps[obj_type] = identifier_map
         except Exception as e:
-            logger.warning(f"Error getting fitting IRIs: {e}")
+            logger.warning(f"Error getting candidate IRIs: {e}")
     else:
-        logger.debug("Skipping constraint-based IRI filtering, all used")
-
-    logger.debug(
-        f"Searching with query '{query}' from natural-language IRI in fitting IRIs"
-    )
+        logger.debug(
+            "Skipping constraint-based IRI filtering, full search will be performed"
+        )
 
     alternative_groups = {}
     for obj_type in obj_types:
+        logger.debug(f"Searching with query '{query}' in '{obj_type.index_name}' index")
         alternatives = manager.search_index(
             obj_type.index_name,
             query,
