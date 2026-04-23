@@ -340,7 +340,7 @@ def find_alternative_groups(
             f"'{sparql_query_type}', '{position.value}'"
         )
     except Exception as e:
-        logger.warning(f"Error analyzing SPARQL prefix: {e}")
+        logger.debug(f"Error analyzing SPARQL prefix: {e}")
         # full search across both indices as fallback
         position = None
 
