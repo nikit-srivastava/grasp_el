@@ -42,7 +42,7 @@ from grasp.baselines.grisp.utils import (
 )
 from grasp.configs import KgConfig
 from grasp.manager import KgManager, load_kg_manager
-from grasp.sparql.types import Selection
+from grasp.sparql.types import ObjType, Selection
 from grasp.sparql.utils import (
     SPARQLExecuteException,
 )
@@ -379,6 +379,11 @@ def select_iris_left_to_right(
     # init empty memo
     memo: dict[str, OrderedAlternatives] = {}
 
+    supports_variants = {
+        obj_type: manager.get_normalizer(obj_type.index_name).supports_variants
+        for obj_type in [ObjType.ENTITY, ObjType.PROPERTY]
+    }
+
     while True:
         if time.monotonic() - start > cfg.selection_max_time:
             yield {"type": "fail", "reason": "timeout"}
@@ -426,25 +431,27 @@ def select_iris_left_to_right(
             yield {"type": "backtrack", "reason": "validation_failed"}
             continue
 
-        prefix, sparql, query, variant = skeleton.prepare_for_selection()
+        info = skeleton.prepare_for_selection()
+        queries = info.build_queries(supports_variants)
 
         # set alternatives for current placeholder
-        if prefix not in memo:
+        if info.prefix not in memo:
             alternative_groups = find_alternative_groups(
                 manager,
-                prefix,
-                query,
+                info.prefix,
+                queries,
                 cfg.selection_top_k,
                 logger,
                 skip_constraint=not cfg.constrain,
                 max_candidates=MAX_IRIS,
             )
-            memo[prefix] = ordered_alternatives_with_interleave(
+            memo[info.prefix] = ordered_alternatives_with_interleave(
                 alternative_groups,
+                queries,
                 interleave=not cfg.rerank,
             )
 
-        alternatives = memo[prefix]
+        alternatives = memo[info.prefix]
         ranking = None
 
         if cfg.rerank:
@@ -456,7 +463,7 @@ def select_iris_left_to_right(
                 tokenizer,
                 manager,
                 question,
-                sparql,
+                info.sparql,
                 skeleton.selections,
                 alternatives,
                 logger,
@@ -465,18 +472,19 @@ def select_iris_left_to_right(
         yield {
             "type": "alternatives",
             "index": skeleton.replaced,
-            "prefix": prefix,
-            "sparql": sparql,
-            "query": query,
-            "variant": variant,
+            "prefix": info.prefix,
+            "sparql": info.sparql,
+            "query": info.query,
+            "variant": info.variant,
             "alternatives": [
                 {
                     "identifier": alternative.get_identifier(),
                     "label": alternative.get_label(),
                     "variants": alternative.variants,
                     "obj_type": obj_type.value,
+                    "variant": variant,
                 }
-                for alternative, obj_type in alternatives
+                for alternative, obj_type, variant in alternatives
             ],
             "ranking": ranking,
         }
@@ -491,7 +499,7 @@ def select_iris_left_to_right(
                 ranked_alts.append(alternatives[index])
 
             alternatives = ranked_alts
-            memo[prefix] = alternatives
+            memo[info.prefix] = alternatives
 
         if len(alternatives) == 0:
             if skeleton.replaced == 0:
@@ -517,16 +525,15 @@ def select_iris_left_to_right(
             continue
 
         # just try out next alternative in order
-        alternative, obj_type = alternatives[0]
+        alternative, obj_type, variant = alternatives[0]
         alternatives = alternatives[1:]
-        memo[prefix] = alternatives
+        memo[info.prefix] = alternatives
         if not alternative.variants:
             # just to be sure to have no parsing errors
             variant = None
 
         if variant is not None:
-            assert alternative.variants, "Expected variants for alternative"
-            if variant not in alternative.variants:
+            if not alternative.variants or variant not in alternative.variants:
                 logger.debug(
                     f"Variant '{variant}' not found in alternative variants, "
                     f"trying next alternative"
@@ -547,16 +554,16 @@ def select_iris_left_to_right(
             )
 
         show_variants = [variant] if variant is not None else None
-        logger.debug(
-            f"Adding the following alternative at placholder {skeleton.replaced}/{skeleton.total}:\n"
-            f"{alternative.get_selection_string(include_variants=show_variants)} "
-        )
         selection = Selection(
             alternative=alternative,
             variant=variant,
             obj_type=obj_type,
         )
         skeleton.add_selection(selection, manager)
+        logger.debug(
+            f"Adding the following alternative at placholder {skeleton.replaced}/{skeleton.total}:\n"
+            f"{alternative.get_selection_string(include_variants=show_variants)} "
+        )
 
         yield {
             "type": "select",

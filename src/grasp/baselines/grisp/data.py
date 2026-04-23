@@ -3,6 +3,7 @@ import os
 import random
 import re
 import string
+from dataclasses import dataclass
 from logging import Logger
 
 import torch
@@ -29,13 +30,13 @@ EOI = "</iri>"
 BOR = "<rep>"
 EOR = "</rep>"
 
-ALT_LABELS = string.ascii_uppercase
+ALT_LABELS = string.ascii_uppercase + string.digits
 
 IGNORE_INDEX = -100
 
 Messages = list[dict[str, str]]
 AlternativeGroups = dict[ObjType, list[Alternative]]
-OrderedAlternatives = list[tuple[Alternative, ObjType]]
+OrderedAlternatives = list[tuple[Alternative, ObjType, str | None]]
 
 
 class IRI(BaseModel):
@@ -107,6 +108,27 @@ def extract_query_and_variant_from_nl_iri(nl_iri: dict) -> tuple[str, str | None
     return query, variant
 
 
+@dataclass
+class Info:
+    prefix: str
+    sparql: str
+    query: str
+    variant: str | None
+    value: str
+
+    def build_queries(
+        self,
+        obj_types: dict[ObjType, bool],
+    ) -> dict[ObjType, tuple[str, str | None]]:
+        queries = {}
+        for obj_type, supports_variants in obj_types.items():
+            if supports_variants and self.variant is not None:
+                queries[obj_type] = (self.query, self.variant)
+            else:
+                queries[obj_type] = (self.value, None)
+        return queries
+
+
 class Skeleton:
     @staticmethod
     def parse(sparql: str, parser: LR1Parser) -> "Skeleton":
@@ -153,7 +175,7 @@ class Skeleton:
         sparql += self.sparql_encoded[start:].decode()
         return sparql
 
-    def prepare_for_selection(self) -> tuple[str, str, str, str | None]:
+    def prepare_for_selection(self) -> Info:
         assert not self.done, "All NL IRIs have already been replaced"
         idx = len(self.selections)
 
@@ -176,7 +198,13 @@ class Skeleton:
         query, variant = extract_query_and_variant_from_nl_iri(nl_iri)
         value = extract_value_from_nl_iri(nl_iri)
         sparql = prefix + f"{BOR}{value}{EOR}" + self.sparql_encoded[byte_end:].decode()
-        return prefix, sparql, query, variant
+        return Info(
+            prefix=prefix,
+            sparql=sparql,
+            query=query,
+            variant=variant,
+            value=value,
+        )
 
     def add_selection(self, selection: Selection, manager: KgManager) -> None:
         assert not self.done, "All NL IRIs have already been replaced"
@@ -231,20 +259,28 @@ for wikidata properties."""
 
 def ordered_alternatives(
     alternative_groups: AlternativeGroups,
+    queries: dict[ObjType, tuple[str, str | None]],
 ) -> OrderedAlternatives:
-    return ordered_alternatives_with_interleave(alternative_groups, interleave=False)
+    return ordered_alternatives_with_interleave(
+        alternative_groups,
+        queries,
+        interleave=False,
+    )
 
 
 def ordered_alternatives_with_interleave(
     alternative_groups: AlternativeGroups,
+    queries: dict[ObjType, tuple[str, str | None]],
     interleave: bool = False,
 ) -> OrderedAlternatives:
+    variants = {obj_type: variant for obj_type, (_, variant) in queries.items()}
+
     entities = [
-        (alternative, ObjType.ENTITY)
+        (alternative, ObjType.ENTITY, variants.get(ObjType.ENTITY))
         for alternative in alternative_groups.get(ObjType.ENTITY, [])
     ]
     properties = [
-        (alternative, ObjType.PROPERTY)
+        (alternative, ObjType.PROPERTY, variants.get(ObjType.PROPERTY))
         for alternative in alternative_groups.get(ObjType.PROPERTY, [])
     ]
 
@@ -273,49 +309,35 @@ def format_alternatives(alternatives: OrderedAlternatives) -> str:
         f"Number of alternatives must be less than {len(ALT_LABELS) - 1}"
     )
 
-    labeled = [
-        (label, alternative, obj_type)
-        for label, (alternative, obj_type) in zip(ALT_LABELS, alternatives)
-    ]
-    has_entities = any(obj_type == ObjType.ENTITY for _, _, obj_type in labeled)
-    has_properties = any(obj_type == ObjType.PROPERTY for _, _, obj_type in labeled)
+    grouped = {}
 
-    if has_entities and has_properties:
-        sections = [
-            ("Top entity alternatives:", ObjType.ENTITY),
-            ("Top property alternatives:", ObjType.PROPERTY),
-        ]
-        lines = []
-        for header, section_obj_type in sections:
-            current = [
-                f"{label}. {alternative.get_selection_string(show_matched_label=False, include_variants=[])}"
-                for label, alternative, obj_type in labeled
-                if obj_type == section_obj_type
-            ]
-            if not current:
-                continue
-            lines.append(header)
-            lines.extend(current)
-        top_k_string = "\n".join(lines)
-    else:
-        top_k_string = "\n".join(
-            # dont show variants in the listing
-            f"{label}. {alternative.get_selection_string(show_matched_label=False, include_variants=[])}"
-            for label, alternative, _ in labeled
+    for label, (alternative, obj_type, variant) in zip(ALT_LABELS, alternatives):
+        alt = alternative.get_selection_string(
+            show_matched_label=False,
+            include_variants=[variant] if variant else None,
         )
+        if obj_type not in grouped:
+            grouped[obj_type] = []
+        grouped[obj_type].append(f"{label}. {alt}")
 
+    alt_groups = []
+    for obj_type, alts in grouped.items():
+        alt_group = f"{obj_type.value.capitalize()} alternatives:\n"
+        alt_group += "\n".join(alts)
+        alt_groups.append(alt_group)
+
+    # always add none alternative
     none_lab = ALT_LABELS[len(alternatives)]
-    top_k_string += f"\n{none_lab}. None of the above"
-    # in case only the none alternative is shown
-    top_k_string = top_k_string.strip()
+    alt_groups.append(f"{none_lab}. None of the above")
+    top_k_string = "\n\n".join(alt_groups)
 
-    return f"Alternatives:\n{top_k_string}"
+    return top_k_string
 
 
 def find_alternative_groups(
     manager: KgManager,
     prefix: str,
-    query: str,
+    queries: dict[ObjType, tuple[str, str | None]],
     top_k: int,
     logger: Logger,
     skip_constraint: bool = False,
@@ -383,6 +405,8 @@ def find_alternative_groups(
 
     alternative_groups = {}
     for obj_type in obj_types:
+        assert obj_type in queries, f"Missing query for object type {obj_type}"
+        query, _ = queries[obj_type]
         logger.debug(f"Searching with query '{query}' in '{obj_type.index_name}' index")
         alternatives = manager.search_index(
             obj_type.index_name,
@@ -395,8 +419,8 @@ def find_alternative_groups(
 
     logger.debug(
         "Found "
-        f"{count_alternatives(ordered_alternatives(alternative_groups))} alternatives:\n"
-        + format_alternatives(ordered_alternatives(alternative_groups))
+        f"{count_alternatives(ordered_alternatives(alternative_groups, queries))} alternatives:\n"
+        + format_alternatives(ordered_alternatives(alternative_groups, queries))
     )
     return alternative_groups
 
@@ -700,6 +724,11 @@ def prepare_selection(
     question, skeleton = materialize_sample(sample, is_val, skeleton_p)
     sparql = materialize_sparql(sample.sparql)
 
+    supports_variants = {
+        obj_type: manager.get_normalizer(obj_type.index_name).supports_variants
+        for obj_type in [ObjType.ENTITY, ObjType.PROPERTY]
+    }
+
     _, items = extract_sparql_items(sparql, manager)
     items = [
         item
@@ -718,7 +747,8 @@ def prepare_selection(
     item = items[upper]
     target_alt = item.selection.alternative
 
-    prefix, sparql, query, _ = skeleton.prepare_for_selection()
+    info = skeleton.prepare_for_selection()
+    queries = info.build_queries(supports_variants)
 
     # TODO: fix hardcoded k values
     k = 10 if is_val else random.randint(2, 10)
@@ -727,8 +757,8 @@ def prepare_selection(
         selection_logger = get_logger("GRISP SELECTION PREP")
         alternative_groups = find_alternative_groups(
             manager,
-            prefix,
-            query,
+            info.prefix,
+            queries,
             k,
             logger=selection_logger,
             skip_constraint=True,
@@ -745,10 +775,10 @@ def prepare_selection(
         for current in alternative_groups.values():
             random.shuffle(current)
 
-    alternatives = ordered_alternatives(alternative_groups)
+    alternatives = ordered_alternatives(alternative_groups, queries)
 
     target_option: int | None = None
-    for i, (alt, obj_type) in enumerate(alternatives):
+    for i, (alt, obj_type, _) in enumerate(alternatives):
         if drop_infos and alt.info:
             alt.info.clear()
 
