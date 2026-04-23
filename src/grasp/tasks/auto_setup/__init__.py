@@ -15,6 +15,7 @@ from grasp.manager.utils import (
 )
 from grasp.model import Message
 from grasp.sparql.item import extract_sparql_items
+from grasp.sparql.types import ObjType
 from grasp.sparql.utils import (
     get_qlever_endpoint,
     load_entity_index_sparql,
@@ -53,8 +54,8 @@ class InfoState(BaseModel):
 def update_known_from_sparql(sparql: str, known: set[str], manager: KgManager) -> None:
     try:
         _, items = extract_sparql_items(sparql, manager)
-        for index in manager.index_names:
-            normalizer = manager.get_normalizer(index)
+        for obj_type in [ObjType.ENTITY, ObjType.PROPERTY]:
+            normalizer = manager.get_normalizer(obj_type.index_name)
             update_known_from_alts(
                 known,
                 (item.alternative for item in items if not item.is_literal),
