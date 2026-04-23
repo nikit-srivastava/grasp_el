@@ -268,16 +268,16 @@ def extract_sparql_items(
                 _get_item(iri, manager, sparql_encoded)
                 for iri in find_all(parse, name="iri", skip={"Prologue"})
             ),
-            (
-                # only literals in triples are searchable in addition to IRIs
-                # rest should be predicted directly
-                _get_item(lit, manager, sparql_encoded)
-                for triple in find_all(parse, name="TriplesSameSubject")
-                for lit in find_all(
-                    triple,
-                    name={"RDFLiteral", "NumericLiteral", "BooleanLiteral"},
-                )
-            ),
+            # commented out for now, since not used anywhere
+            # (
+            #     # get literals in triples
+            #     _get_item(lit, manager, sparql_encoded)
+            #     for triple in find_all(parse, name="TriplesSameSubject")
+            #     for lit in find_all(
+            #         triple,
+            #         name={"RDFLiteral", "NumericLiteral", "BooleanLiteral"},
+            #     )
+            # ),
         ),
     )
 

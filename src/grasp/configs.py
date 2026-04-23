@@ -177,4 +177,4 @@ class NotesFromOutputsConfig(NoteTakingConfig):
 
 class NotesFromExplorationConfig(NotesConfig):
     mode: Literal["functional", "structural"] = "structural"
-    questions_per_round: int = 3
+    questions_per_round: int = 1

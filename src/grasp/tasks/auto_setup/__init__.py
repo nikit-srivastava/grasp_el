@@ -3,7 +3,7 @@ import os
 from pydantic import BaseModel
 
 from grasp.configs import KgInfo
-from grasp.functions import check_known
+from grasp.functions import check_known, update_known_from_alts
 from grasp.manager import DEFAULT_DESCRIPTIONS, KgManager
 from grasp.manager.utils import (
     get_common_sparql_prefixes,
@@ -14,6 +14,7 @@ from grasp.manager.utils import (
     merge_prefixes,
 )
 from grasp.model import Message
+from grasp.sparql.item import extract_sparql_items
 from grasp.sparql.utils import (
     get_qlever_endpoint,
     load_entity_index_sparql,
@@ -49,11 +50,31 @@ class InfoState(BaseModel):
     description: str | None = None
 
 
-def load_index_state(manager: KgManager, name: str) -> IndexState:
+def update_known_from_sparql(sparql: str, known: set[str], manager: KgManager) -> None:
+    try:
+        _, items = extract_sparql_items(sparql, manager)
+        for index in manager.index_names:
+            normalizer = manager.get_normalizer(index)
+            update_known_from_alts(
+                known,
+                (item.alternative for item in items if not item.is_literal),
+                normalizer,
+            )
+    except Exception:
+        pass
+
+
+def load_index_state(manager: KgManager, name: str, known: set[str]) -> IndexState:
     index_dir = get_index_dir(manager.kg)
     sub_index_dir = os.path.join(index_dir, name)
     index_sparql = load_index_sparql(sub_index_dir, manager.logger)
+    if index_sparql is not None:
+        update_known_from_sparql(index_sparql, known, manager)
+
     info_sparql = load_info_sparql(sub_index_dir, manager.logger)
+    if info_sparql is not None:
+        update_known_from_sparql(info_sparql, known, manager)
+
     description = load_index_description(sub_index_dir, manager.logger)
     return IndexState(
         index_sparql=index_sparql,
@@ -414,7 +435,7 @@ and repeat, otherwise stop."""
 
         manager = self.managers[0]
         if self.input["phase"] == "index":
-            self.state = load_index_state(manager, self.input["name"])
+            self.state = load_index_state(manager, self.input["name"], self.known)
             if self.input.get("notes"):
                 return input["notes"]
             else:

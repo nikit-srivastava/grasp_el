@@ -151,7 +151,7 @@ def generate(
         config.know_before_use = True
         logger.debug("Enabling know-before-use for cea task")
 
-    task = get_task(task_name, managers, config)
+    task = get_task(task_name, managers, config, past_known)
 
     input = task.setup(input)
 
@@ -201,8 +201,6 @@ def generate(
     else:
         messages = [Message.system(content=system_instruction)]
 
-    known = past_known or set()
-
     start = time.monotonic()
 
     # add user input
@@ -222,7 +220,7 @@ def generate(
             input,
             config.random_examples,
             config.num_examples,
-            known,
+            task.known,
             config.result_max_rows,
             config.result_max_columns,
         )
@@ -321,7 +319,7 @@ def generate(
                     managers,
                     tool_call.name,
                     tool_call.args,
-                    known,
+                    task.known,
                     task,
                     example_indices,
                 )
@@ -431,7 +429,7 @@ def generate(
         "elapsed": end - start,
         "error": error,
         "messages": [message.model_dump() for message in messages],
-        "known": list(known),
+        "known": list(task.known),
     }
 
     if yield_output:

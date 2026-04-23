@@ -40,10 +40,15 @@ _REGISTRY: dict[str, type[GraspTask]] = {
 }
 
 
-def get_task(task: str, managers: list[KgManager], config: GraspConfig) -> GraspTask:
+def get_task(
+    task: str,
+    managers: list[KgManager],
+    config: GraspConfig,
+    known: set[str] | None = None,
+) -> GraspTask:
     if task not in _REGISTRY:
         raise ValueError(f"Unknown task {task}")
-    return _REGISTRY[task](managers, config)
+    return _REGISTRY[task](managers, config, known)
 
 
 def rules() -> list[str]:
