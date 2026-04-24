@@ -825,13 +825,6 @@ def auto_setup_grasp(args: argparse.Namespace) -> None:
     logger = get_logger("GRASP AUTO-SETUP", args.log_level)
     config = GraspConfig(**load_config(args.config))
 
-    if not config.know_before_use:
-        logger.warning(
-            "`know_before_use` is not enabled in the config, but it is required "
-            "for auto-setup. Enabling it and continuing."
-        )
-        config.know_before_use = True
-
     # load KG manager, gracefully handling missing indices
     managers, _ = setup(config)
     if not managers:
@@ -853,8 +846,18 @@ def auto_setup_grasp(args: argparse.Namespace) -> None:
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     all_phases = [
         ("info", {"phase": "info", "notes": args.info_notes}),
-        ("entity-index", {"phase": "index", "name": "entities", "notes": args.entity_index_notes}),
-        ("property-index", {"phase": "index", "name": "properties", "notes": args.property_index_notes}),
+        (
+            "entity-index",
+            {"phase": "index", "name": "entities", "notes": args.entity_index_notes},
+        ),
+        (
+            "property-index",
+            {
+                "phase": "index",
+                "name": "properties",
+                "notes": args.property_index_notes,
+            },
+        ),
     ]
     selected = {
         "all": {"info", "entity-index", "property-index"},

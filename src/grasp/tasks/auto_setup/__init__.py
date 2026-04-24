@@ -336,8 +336,8 @@ and repeat, otherwise stop."""
         assert isinstance(self.state, IndexState)
         name = self.input["name"]
 
-        if self.config.know_before_use:
-            check_known(manager, sparql, known)
+        # always check whether the query contains only known IRIs
+        check_known(manager, sparql, known)
 
         validation_fn = (
             validate_index_sparql if type == "index" else validate_info_sparql
