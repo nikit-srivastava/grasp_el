@@ -1,4 +1,3 @@
-import json
 import os
 import re
 import sys
@@ -9,13 +8,24 @@ from pathlib import Path
 import natsort
 import pandas as pd
 import streamlit as st
-from pydantic import ValidationError
 from streamlit_autorefresh import st_autorefresh
-from universal_ml_utils.io import load_json, load_jsonl
+from universal_ml_utils.io import load_jsonl
 from universal_ml_utils.logging import get_logger
 
-from grasp.model import Message
 from grasp.utils import is_invalid_evaluation, is_invalid_output
+
+from _shared import (
+    _mtime,
+    display_name_from_file,
+    load_model_outputs,
+    load_rank_json,
+    parse_model_name,
+    render_messages,
+    render_output_panel,
+    try_load_json,
+    try_load_model_outputs,
+    try_load_rank_json,
+)
 
 logger = get_logger("EVALUATION APP")
 
@@ -26,66 +36,6 @@ STYLE_MISSING = "background-color: #444444; color: #ffffff"
 
 # Set page configuration
 st.set_page_config(page_title="SPARQL QA Evaluation", page_icon="📊", layout="wide")
-
-
-def parse_model_name(filename: str) -> tuple[str, str]:
-    """Parse model name and additional info from filename."""
-    basename = os.path.basename(filename)
-    if basename.endswith(".jsonl"):
-        basename = basename[:-6]
-
-    parts = basename.split(".", 1)
-    model_name = parts[0]
-    additional_info = parts[1] if len(parts) > 1 else ""
-
-    return model_name, additional_info
-
-
-def display_name_from_file(path) -> str:
-    """Build the canonical display name (`name` or `name (info)`) from a file path."""
-    name, info = parse_model_name(Path(path).stem)
-    return f"{name} ({info})" if info else name
-
-
-def _mtime(path) -> float:
-    """Return mtime for cache keying; 0.0 if missing."""
-    try:
-        return os.path.getmtime(path)
-    except OSError:
-        return 0.0
-
-
-def try_load_model_outputs(path) -> dict:
-    """Load model outputs; return {} on failure and log the reason."""
-    try:
-        return load_model_outputs(str(path), _mtime(path))
-    except Exception as e:
-        logger.warning(f"Failed to load model outputs from {path}: {e}")
-        return {}
-
-
-def try_load_json(path, default=None):
-    """Load a JSON file; return `default` on failure and log the reason."""
-    try:
-        return load_json(str(path))
-    except Exception as e:
-        logger.warning(f"Failed to load JSON file {path}: {e}")
-        return {} if default is None else default
-
-
-@st.cache_data
-def load_rank_json(path: str, mtime: float) -> dict:
-    """Cached load of a ranking JSON file, keyed by path + mtime."""
-    return load_json(path)
-
-
-def try_load_rank_json(path) -> dict:
-    """Load a ranking JSON via cache; return {} on failure and log the reason."""
-    try:
-        return load_rank_json(str(path), _mtime(path))
-    except Exception as e:
-        logger.warning(f"Failed to load ranking file {path}: {e}")
-        return {}
 
 
 def widget_changed(tracker_key: str, current_value) -> bool:
@@ -210,28 +160,6 @@ def load_ranking_data() -> dict:
                     )
 
     return rankings
-
-
-@st.cache_data
-def load_model_outputs(output_file: str, mtime: float) -> dict:
-    """Load model outputs from a JSONL file and convert to dictionary by ID.
-
-    Cached on (path, mtime) so repeated reruns hit the cache and file edits
-    invalidate it automatically.
-    """
-    outputs_list = load_jsonl(output_file)
-    outputs_dict = {}
-
-    for output in outputs_list:
-        if output is None:
-            continue
-
-        assert output["id"] not in outputs_dict, (
-            f"Duplicate id {output['id']} in {output_file}"
-        )
-        outputs_dict[output["id"]] = output
-
-    return outputs_dict
 
 
 def calculate_average_steps_and_time(
@@ -753,119 +681,8 @@ def show_predictions_view(available_data: dict) -> None:
             with st.expander("Model Configuration"):
                 st.json(config_data)
 
-        # Display full generation process (messages)
-        if "messages" not in output:
-            st.info("No generation process (messages) available for this output.")
-            return
-
         st.subheader("Generation Process")
-
-        if new_format:
-            # try new message format first
-            try:
-                messages = [Message(**msg) for msg in output["messages"]]
-                for i, message in enumerate(messages):
-                    role = message.role.capitalize()
-                    if isinstance(message.content, str):
-                        if not message.content:
-                            continue  # Skip empty messages
-
-                        st.markdown(f"**{role}:**")
-                        st.markdown(message.content)
-
-                    else:
-                        content = message.content.get_content()
-                        if not content and not message.content.tool_calls:
-                            continue  # Skip empty messages
-
-                        if "reasoning" in content:
-                            st.markdown("**Reasoning:**")
-                            st.markdown(content["reasoning"])
-
-                        if "content" in content:
-                            if "reasoning" in content:
-                                st.markdown("**Content:**")
-                            st.markdown(content["content"])
-
-                        for tool_call in message.content.tool_calls:
-                            st.markdown(f"**Tool: {tool_call.name}**")
-                            st.code(
-                                json.dumps(tool_call.args, indent=2), language="json"
-                            )
-                            st.markdown("**Result:**")
-                            st.markdown(tool_call.result)
-
-                    if i < len(messages) - 1:
-                        st.markdown("---")
-
-                return
-            except (TypeError, ValueError, KeyError, ValidationError) as e:
-                logger.warning(
-                    f"New-format message parsing failed, falling back to legacy: {e}"
-                )
-
-        # fallback to old message format
-        def display_tool_call(call, tool_responses):
-            """Display a single tool call and its response."""
-            tool_call_id = call.get("id")
-            tool_name = call.get("function", {}).get("name", "unknown")
-            tool_args = call.get("function", {}).get("arguments", "{}")
-
-            # Format arguments
-            formatted_args = json.dumps(json.loads(tool_args), indent=2)
-
-            # Show tool call
-            st.markdown(f"**Tool: {tool_name}**")
-            st.code(formatted_args, language="json")
-
-            # Show corresponding tool response if available
-            if tool_call_id in tool_responses:
-                tool_response = tool_responses[tool_call_id]
-                tool_content = tool_response.get("content", "")
-                st.markdown("**Result:**")
-                st.markdown(tool_content)
-
-        # First, build a lookup map for tool responses by tool_call_id
-        tool_responses = {}
-        for msg in output["messages"]:
-            if msg["role"] == "tool":
-                tool_responses[msg["tool_call_id"]] = msg
-
-        # Now process messages with tool calls integrated
-        for i, message in enumerate(output["messages"]):
-            role = message.get("role", "unknown")
-
-            # Skip tool messages as we'll show them with their calls
-            if role == "tool":
-                continue
-
-            reasoning_content = message.get("reasoning_content", "").strip()
-            content = message.get("content", "").strip()
-            tool_calls = message.get("tool_calls", [])
-            if not reasoning_content and not content and not tool_calls:
-                continue  # Skip empty messages
-
-            # Display role header
-            st.markdown(f"**{role.capitalize()}:**")
-
-            # Show reasoning content if available
-            if reasoning_content:
-                st.markdown("**Reasoning:**")
-                st.markdown(reasoning_content)
-
-            # Show message content
-            if content:
-                if reasoning_content:
-                    st.markdown("**Content:**")
-                st.markdown(content)
-
-            # Handle tool calls in assistant messages
-            for call in tool_calls:
-                display_tool_call(call, tool_responses)
-
-            # Add separator between messages
-            if i < len(output["messages"]) - 1:
-                st.markdown("---")
+        render_messages(output, new_format=new_format)
 
 
 def validate_ranking_consistency(
@@ -1085,6 +902,7 @@ def show_ranking_view(ranking_data: dict) -> None:
 
     # Process all benchmarks to build comprehensive table (one row per benchmark)
     table_rows = []
+    any_scores_anywhere = False
 
     for entry in benchmark_entries:
         kg = entry["kg"]
@@ -1122,6 +940,9 @@ def show_ranking_view(ranking_data: dict) -> None:
             model_wins = {}
             model_steps = {}
             model_time = {}
+            model_avg_score = {}
+            model_score_n = {}
+            has_any_score = False
             tie_count = 0
 
             for key, value in summary.items():
@@ -1138,6 +959,15 @@ def show_ranking_view(ranking_data: dict) -> None:
                 model_steps[model_display_name] = avg_steps
                 model_time[model_display_name] = avg_time
 
+                avg_score = value.get("avg_score") if isinstance(value, dict) else None
+                model_avg_score[model_display_name] = avg_score
+                model_score_n[model_display_name] = (
+                    value.get("n_scores", 0) if isinstance(value, dict) else 0
+                )
+                if avg_score is not None:
+                    has_any_score = True
+                    any_scores_anywhere = True
+
             # Calculate total for percentages
             total_comparisons = sum(model_wins.values()) + tie_count
 
@@ -1151,6 +981,15 @@ def show_ranking_view(ranking_data: dict) -> None:
                 row_data[f"{letter} Wins"] = f"{percentage:.1f}% ({wins})"
                 # Store raw value for determining winner
                 row_data[f"_{letter}_wins_raw"] = wins
+
+                avg_score = model_avg_score.get(model)
+                n_scores = model_score_n.get(model, 0)
+                row_data[f"{letter} Avg Score"] = (
+                    f"{avg_score:.2f}/10 (n={n_scores})"
+                    if avg_score is not None
+                    else "—"
+                )
+                row_data[f"_{letter}_avg_score_raw"] = avg_score
 
             # Add ties column
             tie_percentage = (
@@ -1209,6 +1048,10 @@ def show_ranking_view(ranking_data: dict) -> None:
     for model in sorted_models:
         letter = model_to_letter[model]
         display_columns.append(f"{letter} Wins")
+    if any_scores_anywhere:
+        for model in sorted_models:
+            letter = model_to_letter[model]
+            display_columns.append(f"{letter} Avg Score")
     display_columns.extend(["Ties", "Avg Steps", "Avg Time", "Valid Evals"])
 
     df_display = df[display_columns]
@@ -1354,6 +1197,26 @@ def show_ranking_view(ranking_data: dict) -> None:
         if err_text:
             st.error(f"Judge error: {err_text}")
 
+        scores_entry = evaluation_entry.get("scores")
+        if scores_entry:
+            score_rows = []
+            for k, v in scores_entry.items():
+                try:
+                    idx = int(k)
+                except (TypeError, ValueError):
+                    continue
+                if not (0 <= idx < len(summary_model_entries)):
+                    continue
+                score_rows.append(
+                    {
+                        "Model": summary_model_entries[idx]["display_name"],
+                        "Score": f"{v}/10",
+                    }
+                )
+            if score_rows:
+                st.markdown("**Per-candidate Scores**")
+                st.table(score_rows)
+
     st.markdown("**Model Outputs**")
     if not model_display_order:
         st.info("No model outputs available for this benchmark.")
@@ -1365,61 +1228,10 @@ def show_ranking_view(ranking_data: dict) -> None:
             for col, model_name in zip(cols, current_models):
                 outputs = model_outputs.get(model_name, {})
                 output_entry = outputs.get(selected_id)
-                output_payload = {}
-
-                if isinstance(output_entry, dict):
-                    output_field = output_entry.get("output", output_entry)
-                    if isinstance(output_field, dict):
-                        output_payload = output_field
 
                 with col.container(border=True):
                     st.markdown(f"**{model_name}**")
-
-                    if not output_entry:
-                        st.info("No output available for this example.")
-                        continue
-
-                    rendered_any = False
-                    sparql_query = output_payload.get("sparql")
-                    if sparql_query:
-                        st.markdown("**SPARQL**")
-                        st.code(sparql_query, language="sparql")
-                        rendered_any = True
-
-                    result_data = output_payload.get("result")
-                    if result_data is not None:
-                        st.markdown("**Result**")
-                        if isinstance(result_data, (dict, list)):
-                            st.json(result_data)
-                        else:
-                            st.code(str(result_data), language="json")
-                        rendered_any = True
-
-                    selections_data = output_payload.get("selections")
-                    if selections_data:
-                        st.markdown("**Selections**")
-                        if isinstance(selections_data, (dict, list)):
-                            st.json(selections_data)
-                        else:
-                            st.write(selections_data)
-                        rendered_any = True
-
-                    answer_text = output_payload.get("answer")
-                    if answer_text:
-                        with st.expander("Answer"):
-                            st.markdown(answer_text)
-                        rendered_any = True
-
-                    if not rendered_any:
-                        fallback_data = (
-                            output_entry.get("output", output_entry)
-                            if isinstance(output_entry, dict)
-                            else output_entry
-                        )
-                        st.info(
-                            "No structured SPARQL/result/selections/answer available."
-                        )
-                        st.write(fallback_data)
+                    render_output_panel(output_entry)
 
 
 def show_comprehensive_view(available_data: dict) -> None:

@@ -632,10 +632,10 @@ def call_function(
         raise ValueError(f"Unknown function {fn_name}")
 
 
-def _validate_page(page: int, max_pages: int) -> None:
+def _validate_page(page: int, max_pages: int | None = None) -> None:
     if page < 1:
         raise FunctionCallException("Page number must be at least 1")
-    if page > max_pages:
+    elif max_pages is not None and page > max_pages:
         raise FunctionCallException(f"Page number must be at most {max_pages}")
 
 
@@ -666,7 +666,7 @@ def search_entity(
     normalizer = manager.get_normalizer("entities")
     update_known_from_alts(known, alts, normalizer)
 
-    return format_index_alternatives(alts, "entities", k, start_index=(page - 1) * k)
+    return format_index_alternatives(alts, k, page)
 
 
 def search_property(
@@ -696,7 +696,7 @@ def search_property(
     normalizer = manager.get_normalizer("properties")
     update_known_from_alts(known, alts, normalizer)
 
-    return format_index_alternatives(alts, "properties", k, start_index=(page - 1) * k)
+    return format_index_alternatives(alts, k, page)
 
 
 COMMON_PREFIXES = get_common_sparql_prefixes()
@@ -952,8 +952,7 @@ def list_triples(
     request_timeout: float | tuple[float, float] | None = None,
     read_timeout: float | None = None,
 ) -> str:
-    if page < 1:
-        raise FunctionCallException("Page number must be at least 1")
+    _validate_page(page)
 
     manager, _ = find_manager(managers, kg)
 
@@ -1200,25 +1199,23 @@ search index due to:
     normalizer = manager.get_normalizer(index)
     update_known_from_alts(known, alternatives, normalizer)
 
-    return info + format_index_alternatives(
-        alternatives, index, k, start_index=(page - 1) * k
-    )
+    return info + format_index_alternatives(alternatives, k, page)
 
 
 def format_index_alternatives(
     alternatives: list[Alternative],
-    index_name: str,
     k: int,
-    start_index: int = 0,
+    page: int = 1,
 ) -> str:
     if not alternatives:
-        return f"No {index_name} alternatives found"
+        return f"No results found on page {page}"
 
-    top_k_string = "\n".join(
+    start_index = (page - 1) * k
+    lines = "\n".join(
         f"{start_index + i + 1}. {alt.get_selection_string()}"
         for i, alt in enumerate(alternatives)
     )
-    return f"Top {k} {index_name} alternatives:\n{top_k_string}"
+    return f"Showing {len(alternatives)} results from page {page}:\n{lines}"
 
 
 def search_with_filter(
@@ -1261,11 +1258,11 @@ def search_with_filter(
             )
         except Exception as e:
             info = f"""\
-    Falling back to an unconstrained search on the full \
-    search index due to:
-    {e}
+Falling back to an unconstrained search on the full \
+search index due to:
+{e}
 
-    """
+"""
 
     alternatives = manager.search_index(
         index,
@@ -1281,6 +1278,4 @@ def search_with_filter(
     normalizer = manager.get_normalizer(index)
     update_known_from_alts(known, alternatives, normalizer)
 
-    return info + format_index_alternatives(
-        alternatives, index, k, start_index=(page - 1) * k
-    )
+    return info + format_index_alternatives(alternatives, k, page)

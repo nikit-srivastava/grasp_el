@@ -334,6 +334,40 @@ def parse_args() -> argparse.Namespace:
         help="Maximum duration for a single query in seconds if reformatting is enabled",
     )
 
+    eval_expert_parser = eval_subparsers.add_parser(
+        "expert",
+        help="Launch a blind expert evaluation Streamlit app over GRASP outputs",
+    )
+    eval_expert_parser.add_argument(
+        "input_file",
+        type=str,
+        help="Path to file with inputs in JSONL format",
+    )
+    eval_expert_parser.add_argument(
+        "prediction_files",
+        type=str,
+        nargs="+",
+        help="Paths to files with GRASP predictions as produced by the 'file' command",
+    )
+    eval_expert_parser.add_argument(
+        "evaluation_file",
+        type=str,
+        help="Path to file to read/write the expert evaluation JSON",
+    )
+    eval_expert_parser.add_argument(
+        "--kg-config",
+        type=str,
+        default=None,
+        help="Optional path to a KgConfig YAML; if provided, ground-truth SPARQL "
+        "from the input file is executed against the corresponding KG",
+    )
+    eval_expert_parser.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help="Optional port for the Streamlit server",
+    )
+
     eval_parser.add_argument(
         "--retry-failed",
         action="store_true",
@@ -772,6 +806,45 @@ def take_grasp_notes(args: argparse.Namespace) -> None:
         )
 
 
+def _launch_expert_app(args: argparse.Namespace) -> None:
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    # src/grasp/cli.py -> src/grasp -> src -> repo root -> apps/evaluation/expert.py
+    expert_app = (
+        Path(__file__).resolve().parent.parent.parent / "apps" / "evaluation" / "expert.py"
+    )
+    if not expert_app.exists():
+        print(
+            f"Expert app not found at {expert_app}. Make sure you're running "
+            "from the grasp repository checkout.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    streamlit = shutil.which("streamlit")
+    if streamlit is None:
+        print(
+            "The 'streamlit' executable was not found. Install it with "
+            "`pip install streamlit` to use the expert evaluation app.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    cmd: list[str] = [streamlit, "run", str(expert_app)]
+    if args.port is not None:
+        cmd += ["--server.port", str(args.port)]
+    cmd.append("--")
+    cmd.append(args.input_file)
+    cmd.extend(args.prediction_files)
+    cmd += ["--evaluation", args.evaluation_file]
+    if args.kg_config:
+        cmd += ["--kg-config", args.kg_config]
+
+    subprocess.run(cmd, check=False)
+
+
 def evaluate_grasp(args: argparse.Namespace) -> None:
     eval_cmd = args.evaluate_command
 
@@ -803,6 +876,9 @@ def evaluate_grasp(args: argparse.Namespace) -> None:
             args.timeout,
             args.log_level,
         )
+
+    elif eval_cmd == "expert":
+        _launch_expert_app(args)
 
 
 def show_grasp(args: argparse.Namespace) -> None:
