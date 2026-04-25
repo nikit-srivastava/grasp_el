@@ -180,3 +180,11 @@ class NotesFromOutputsConfig(NoteTakingConfig):
 class NotesFromExplorationConfig(NotesConfig):
     mode: Literal["functional", "structural"] = "structural"
     questions_per_round: int = 1
+
+
+class NotesGenerateQuestionsConfig(NotesConfig):
+    # soft per-round target, surfaced in the system prompt only;
+    # generation only stops on the agent's stop call. With num_rounds
+    # already on NotesConfig, this implicitly bounds the total via
+    # num_rounds * questions_per_round.
+    questions_per_round: int = 4

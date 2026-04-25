@@ -28,12 +28,14 @@ from grasp.configs import (
     NotesFromExplorationConfig,
     NotesFromOutputsConfig,
     NotesFromSamplesConfig,
+    NotesGenerateQuestionsConfig,
     ServerConfig,
 )
 from grasp.core import generate, load_notes, setup
 from grasp.evaluate import evaluate_f1, evaluate_with_judge
 from grasp.functions import find_manager
 from grasp.notes import (
+    generate_questions,
     take_notes_from_exploration,
     take_notes_from_outputs,
     take_notes_from_samples,
@@ -238,6 +240,19 @@ def parse_args() -> argparse.Namespace:
         help="Save note taking results in this directory",
     )
     add_overwrite_arg(note_explore_parser)
+
+    note_generate_parser = note_subparsers.add_parser(
+        "generate-questions",
+        help="Generate plausible user questions over the configured "
+        "knowledge graphs as bootstrap samples for note taking",
+    )
+    add_config_arg(note_generate_parser)
+    note_generate_parser.add_argument(
+        "output_dir",
+        type=str,
+        help="Save generated samples in this directory",
+    )
+    add_overwrite_arg(note_generate_parser)
 
     # evaluate GRASP output
     eval_parser = subparsers.add_parser(
@@ -800,6 +815,13 @@ def take_grasp_notes(args: argparse.Namespace) -> None:
     elif note_cmd == "explore":
         take_notes_from_exploration(
             NotesFromExplorationConfig(**config),
+            args.output_dir,
+            args.overwrite,
+            args.log_level,
+        )
+    elif note_cmd == "generate-questions":
+        generate_questions(
+            NotesGenerateQuestionsConfig(**config),
             args.output_dir,
             args.overwrite,
             args.log_level,

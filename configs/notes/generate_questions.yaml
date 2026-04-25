@@ -1,0 +1,38 @@
+model: env(MODEL:gpt-5.4-mini)
+model_provider: env(MODEL_PROVIDER:openai/responses)
+model_endpoint: env(MODEL_ENDPOINT:null)
+model_api_key: env(OPENAI_API_KEY)
+model_kwargs:
+  reasoning:
+    effort: env(REASONING_EFFORT:null)
+    summary: env(REASONING_SUMMARY:null)
+
+seed: env(SEED:22)
+
+fn_set: env(FN_SET:all)
+feedback: env(FEEDBACK:false)
+know_before_use: env(KNOW_BEFORE_USE:false)
+notes_file: env(NOTES_FILE:null)
+
+list_k: env(LIST_K:10)
+search_k: env(SEARCH_K:10)
+result_max_rows: env(RESULT_MAX_ROWS:10)
+result_max_columns: env(RESULT_MAX_COLUMNS:10)
+
+knowledge_graphs:
+  - kg: env(KG)
+    entities_type: env(ENTITIES_TYPE:fuzzy)
+    properties_type: env(PROPERTIES_TYPE:embedding)
+    notes_file: env(KG_NOTES_FILE:null)
+    info:
+      endpoint: env(KG_ENDPOINT:null)
+
+# note configuration
+max_notes: env(MAX_NOTES:16)
+max_note_length: env(MAX_NOTE_LENGTH:512)
+
+num_rounds: env(NUM_ROUNDS:20)
+
+# soft per-round target for generated questions (mentioned in the prompt;
+# generation only stops on the agent's stop call)
+questions_per_round: env(QUESTIONS_PER_ROUND:4)
