@@ -187,4 +187,4 @@ class NotesGenerateQuestionsConfig(NotesConfig):
     # generation only stops on the agent's stop call. With num_rounds
     # already on NotesConfig, this implicitly bounds the total via
     # num_rounds * questions_per_round.
-    questions_per_round: int = 4
+    questions_per_round: int = 1

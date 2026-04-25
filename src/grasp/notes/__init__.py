@@ -227,7 +227,7 @@ def take_notes_from_exploration(
         state = FunctionalExplorationState(notes=notes, kg_notes=kg_notes)
     elif config.mode == "structural":
         task_name = "exploration_structural"
-        state = StructuralExplorationState(notes=notes, kg_notes=kg_notes)
+        state = StructuralExplorationState(kg_notes=kg_notes)
     else:
         raise ValueError(f"Unknown exploration mode: {config.mode}")
 
@@ -238,21 +238,21 @@ def take_notes_from_exploration(
                 state,
                 config,
                 managers,
-                state.kg_notes,
-                state.notes,
+                kg_notes,
+                notes,
                 logger=agent_logger,
             )
         )
 
         dump_json(output, os.path.join(out_dir, f"output.exploration.round_{r}.json"))
 
-        for kg, kg_specific_notes in state.kg_notes.items():
+        for kg, kg_specific_notes in kg_notes.items():
             out_file = os.path.join(out_dir, f"notes.exploration.{kg}.round_{r}.json")
             dump_json(kg_specific_notes, out_file, indent=2)
             link(out_file, os.path.join(out_dir, f"notes.exploration.{kg}.json"))
 
         out_file = os.path.join(out_dir, f"notes.exploration.round_{r}.json")
-        dump_json(state.notes, out_file, indent=2)
+        dump_json(notes, out_file, indent=2)
         link(out_file, os.path.join(out_dir, "notes.exploration.json"))
 
 
@@ -302,9 +302,7 @@ def generate_questions(
                 ).model_dump()
                 for q in kg_questions
             ]
-            out_file = os.path.join(
-                out_dir, f"samples.{kg}.round_{r}.jsonl"
-            )
+            out_file = os.path.join(out_dir, f"samples.{kg}.round_{r}.jsonl")
             dump_jsonl(samples, out_file)
             link(out_file, os.path.join(out_dir, f"samples.{kg}.jsonl"))
 

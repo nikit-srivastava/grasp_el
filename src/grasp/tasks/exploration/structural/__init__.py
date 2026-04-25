@@ -13,11 +13,10 @@ from grasp.tasks.exploration.structural.functions import (
     show_explored,
 )
 from grasp.tasks.functions import find_frequent, find_frequent_function_definition
-from grasp.utils import format_kg_notes, format_notes
+from grasp.utils import format_kg_notes
 
 
 class StructuralExplorationState(BaseModel):
-    notes: list[str] = []
     kg_notes: dict[str, list[str]] = {}
     explored: dict[str, list[str]] = {}
 
@@ -39,8 +38,7 @@ explore knowledge graphs around selected seed nodes \
 and take notes about them using the provided functions.
 
 You are limited to a maximum of {config.max_notes} notes \
-per knowledge graph, plus {config.max_notes} general notes for insights that apply \
-across knowledge graphs. Each note is limited to a maximum of \
+per knowledge graph. Each note is limited to a maximum of \
 {config.max_note_length} characters to ensure it is concise and to the point.
 
 Your notes should help you to better understand and navigate the \
@@ -72,14 +70,10 @@ def output(state: StructuralExplorationState) -> dict:
 Exploration completed.
 
 Knowledge graph specific notes:
-{format_kg_notes(state.kg_notes)}
-
-General notes across knowledge graphs:
-{format_notes(state.notes)}"""
+{format_kg_notes(state.kg_notes)}"""
 
     return {
         "type": "output",
-        "notes": state.notes,
         "kg_notes": state.kg_notes,
         "explored": state.explored,
         "formatted": formatted,

@@ -2,8 +2,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from grasp.configs import GraspConfig, NotesGenerateQuestionsConfig
-from grasp.manager import KgManager
+from grasp.configs import NotesGenerateQuestionsConfig
 from grasp.model import Message
 from grasp.tasks.base import GraspTask
 from grasp.tasks.functions import find_frequent, find_frequent_function_definition
@@ -32,14 +31,10 @@ def rules() -> list[str]:
     ]
 
 
-def system_information(config: GraspConfig, managers: list[KgManager]) -> str:
-    assert isinstance(config, NotesGenerateQuestionsConfig)
-    kgs = [manager.kg for manager in managers]
-    kg_list = ", ".join(f'"{kg}"' for kg in kgs) if kgs else "(none)"
-
+def system_information(config: NotesGenerateQuestionsConfig) -> str:
     return f"""\
-You are emulating a user posing questions over the available knowledge graphs \
-({kg_list}). Your task is to produce a diverse pool of plausible user questions \
+You are emulating a user posing questions over the available knowledge graphs. \
+Your task is to produce a diverse pool of plausible user questions \
 that real users might ask, with the help of the provided functions.
 
 Real users do not know upfront what a knowledge graph can or cannot answer, so \
@@ -49,7 +44,7 @@ multi-hop, superlative, conversational, ambiguous, ...). These are examples \
 to inspire variety, not a fixed taxonomy.
 
 You should follow a step-by-step approach:
-1. Call show_questions for one or more knowledge graphs to see what is already \
+1. Look at the already existing questions to see what is already \
 in the pool and identify underrepresented topics, difficulties, or styles.
 2. Come up with a candidate user question targeting an underrepresented angle. \
 Optionally, explore the knowledge graph or draft and execute a SPARQL query to \
@@ -58,9 +53,7 @@ also submit purely speculative questions, including ones that may turn out to \
 be unanswerable.
 3. Submit the question via submit_question.
 4. Repeat steps 1-3 until you have submitted around {config.questions_per_round} \
-questions for this round, then call stop. \
-Before stopping, briefly review show_questions to confirm the round added \
-meaningful variety."""
+questions for this round, then call stop."""
 
 
 def output(state: QuestionGenerationState) -> dict:
@@ -68,9 +61,8 @@ def output(state: QuestionGenerationState) -> dict:
     if not counts:
         formatted = "Question generation completed. No questions in the pool."
     else:
-        formatted = (
-            "Question generation completed. Current pool:\n"
-            + format_list(counts)
+        formatted = "Question generation completed. Current pool:\n" + format_list(
+            counts
         )
 
     return {
@@ -84,7 +76,8 @@ class QuestionGenerationTask(GraspTask):
     name = "question_generation"
 
     def system_information(self) -> str:
-        return system_information(self.config, self.managers)
+        assert isinstance(self.config, NotesGenerateQuestionsConfig)
+        return system_information(self.config)
 
     def rules(self) -> list[str]:
         return rules()

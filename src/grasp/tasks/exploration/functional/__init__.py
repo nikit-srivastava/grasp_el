@@ -49,8 +49,8 @@ You should follow a step-by-step approach to take notes:
 1. Look at the current notes to figure out which functions and use cases \
 are well-covered and which are underexplored or missing entirely.
 2. Pick a function or a specific aspect of a function that is underexplored. \
-Exercise it systematically — vary its arguments, explore edge cases, and \
-observe how its output changes — and take notes about your findings along \
+Exercise it systematically - vary its arguments, explore edge cases, and \
+observe how its output changes - and take notes about your findings along \
 the way.
 3. Repeat step 2, working through different functions and aspects, until \
 you have thoroughly covered all provided functions or you run out of new \
