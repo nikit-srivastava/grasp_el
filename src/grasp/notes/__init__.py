@@ -225,9 +225,14 @@ def take_notes_from_exploration(
     if config.mode == "functional":
         task_name = "exploration_functional"
         state = FunctionalExplorationState(notes=notes, kg_notes=kg_notes)
+        # rebind
+        notes = state.notes
+        kg_notes = state.kg_notes
     elif config.mode == "structural":
         task_name = "exploration_structural"
         state = StructuralExplorationState(kg_notes=kg_notes)
+        # rebind
+        kg_notes = state.kg_notes
     else:
         raise ValueError(f"Unknown exploration mode: {config.mode}")
 
