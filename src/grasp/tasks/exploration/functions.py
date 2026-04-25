@@ -2,21 +2,29 @@ from grasp.manager import KgManager
 from grasp.utils import FunctionCallException, clip, format_notes
 
 
-def note_function_definitions(managers: list[KgManager]) -> list[dict]:
+def note_function_definitions(managers: list[KgManager], general: bool = True) -> list[dict]:
     kgs: list[str | None] = [manager.kg for manager in managers]
-    kgs.append(None)
+    if general:
+        kgs.append(None)
+
+    kg_type: str | list[str] = ["string", "null"] if general else "string"
+
+    def kg_property(verb: str) -> dict:
+        desc = f"The knowledge graph for which to {verb} the note"
+        if general:
+            desc += " (null for general notes)"
+        return {"type": kg_type, "enum": kgs, "description": desc}
+
+    general_or_kg = "general or knowledge graph specific" if general else "knowledge graph specific"
+
     return [
         {
             "name": "add_note",
-            "description": "Add a general or knowledge graph specific note.",
+            "description": f"Add a {general_or_kg} note.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "kg": {
-                        "type": ["string", "null"],
-                        "enum": kgs,
-                        "description": "The knowledge graph for which to add the note (null for general notes)",
-                    },
+                    "kg": kg_property("add"),
                     "note": {
                         "type": "string",
                         "description": "The note to add",
@@ -29,15 +37,11 @@ def note_function_definitions(managers: list[KgManager]) -> list[dict]:
         },
         {
             "name": "delete_note",
-            "description": "Delete a general or knowledge graph specific note.",
+            "description": f"Delete a {general_or_kg} note.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "kg": {
-                        "type": ["string", "null"],
-                        "enum": kgs,
-                        "description": "The knowledge graph for which to delete the note (null for general notes)",
-                    },
+                    "kg": kg_property("delete"),
                     "num": {
                         "type": "number",
                         "description": "The number of the note to delete",
@@ -50,15 +54,11 @@ def note_function_definitions(managers: list[KgManager]) -> list[dict]:
         },
         {
             "name": "update_note",
-            "description": "Update a general or knowledge graph specific note.",
+            "description": f"Update a {general_or_kg} note.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "kg": {
-                        "type": ["string", "null"],
-                        "enum": kgs,
-                        "description": "The knowledge graph for which to update the note (null for general notes)",
-                    },
+                    "kg": kg_property("update"),
                     "num": {
                         "type": "number",
                         "description": "The number of the note to update",
@@ -75,15 +75,11 @@ def note_function_definitions(managers: list[KgManager]) -> list[dict]:
         },
         {
             "name": "show_notes",
-            "description": "Show current general or knowledge graph specific notes.",
+            "description": f"Show current {general_or_kg} notes.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "kg": {
-                        "type": ["string", "null"],
-                        "enum": kgs,
-                        "description": "The knowledge graph for which to show the notes (null for general notes)",
-                    },
+                    "kg": kg_property("show"),
                 },
                 "required": ["kg"],
                 "additionalProperties": False,
