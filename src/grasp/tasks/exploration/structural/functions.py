@@ -8,7 +8,7 @@ from grasp.utils import FunctionCallException, format_enumerate
 
 def note_function_definitions(managers: list[KgManager]) -> list[dict]:
     kgs = [manager.kg for manager in managers]
-    functions = base_note_function_definitions(managers)
+    functions = base_note_function_definitions(managers, general=False)
     # insert the structural-only definitions before the trailing "stop" entry
     stop = functions.pop()
     functions.extend(
