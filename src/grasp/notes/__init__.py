@@ -1,11 +1,12 @@
 import os
 import random
 import time
+import uuid
 from logging import Logger
 
 import yaml
 from tqdm import tqdm, trange
-from universal_ml_utils.io import dump_json, load_jsonl
+from universal_ml_utils.io import dump_json, dump_jsonl, load_jsonl
 from universal_ml_utils.logging import get_logger
 from universal_ml_utils.ops import consume_generator
 
@@ -15,6 +16,7 @@ from grasp.configs import (
     NotesFromExplorationConfig,
     NotesFromOutputsConfig,
     NotesFromSamplesConfig,
+    NotesGenerateQuestionsConfig,
     NoteTakingConfig,
 )
 from grasp.core import generate, load_notes, setup
@@ -29,6 +31,7 @@ from grasp.tasks.exploration import (
     StructuralExplorationState,
 )
 from grasp.tasks.exploration.functions import call_function, note_function_definitions
+from grasp.tasks.question_generation import QuestionGenerationState
 from grasp.tasks.sparql_qa.examples import SparqlQaSample
 from grasp.tasks.utils import Sample, format_sparql_result, prepare_sparql_result
 from grasp.utils import (
@@ -251,6 +254,59 @@ def take_notes_from_exploration(
         out_file = os.path.join(out_dir, f"notes.exploration.round_{r}.json")
         dump_json(state.notes, out_file, indent=2)
         link(out_file, os.path.join(out_dir, "notes.exploration.json"))
+
+
+def generate_questions(
+    config: NotesGenerateQuestionsConfig,
+    out_dir: str,
+    overwrite: bool = False,
+    log_level: str | int | None = None,
+) -> None:
+    if os.path.exists(out_dir) and not overwrite:
+        raise FileExistsError(f"Output directory {out_dir} already exists")
+
+    agent_logger = get_logger("GRASP AGENT", log_level)
+
+    managers, _ = setup(config)
+
+    os.makedirs(out_dir, exist_ok=True)
+    with open(os.path.join(out_dir, "config.yaml"), "w") as f:
+        yaml.dump(config.model_dump(), f)
+
+    state = QuestionGenerationState()
+
+    for r in trange(config.num_rounds, desc="Generating questions"):
+        output = consume_generator(
+            generate(
+                "question_generation",
+                state,
+                config,
+                managers,
+                kg_notes={},
+                notes=[],
+                logger=agent_logger,
+            )
+        )
+
+        dump_json(
+            output,
+            os.path.join(out_dir, f"output.question_generation.round_{r}.json"),
+        )
+
+        for kg, kg_questions in state.questions.items():
+            samples = [
+                SparqlQaSample(
+                    id=uuid.uuid4().hex,
+                    question=q,
+                    sparql="",
+                ).model_dump()
+                for q in kg_questions
+            ]
+            out_file = os.path.join(
+                out_dir, f"samples.{kg}.round_{r}.jsonl"
+            )
+            dump_jsonl(samples, out_file)
+            link(out_file, os.path.join(out_dir, f"samples.{kg}.jsonl"))
 
 
 def rules() -> list[str]:
