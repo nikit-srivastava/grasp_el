@@ -9,25 +9,23 @@ from grasp.utils import FunctionCallException, format_enumerate
 def note_function_definitions(managers: list[KgManager]) -> list[dict]:
     kgs = [manager.kg for manager in managers]
     functions = base_note_function_definitions(managers, general=False)
-    # insert the structural-only definitions before the trailing "stop" entry
-    stop = functions.pop()
     functions.extend(
         [
             {
                 "name": "mark_explored",
-                "description": "Mark an IRI as the seed node for this exploration round. "
-                "Exactly one seed node must be marked per round.",
+                "description": "Mark an IRI as the seed for this exploration round. "
+                "Exactly one seed must be marked per round.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "kg": {
                             "type": "string",
                             "enum": kgs,
-                            "description": "The knowledge graph of the seed node to mark as explored",
+                            "description": "The knowledge graph of the seed to mark as explored",
                         },
                         "iri": {
                             "type": "string",
-                            "description": "The IRI of the seed node to mark as explored",
+                            "description": "The IRI of the seed to mark as explored",
                         },
                     },
                     "required": ["kg", "iri"],
@@ -37,14 +35,14 @@ def note_function_definitions(managers: list[KgManager]) -> list[dict]:
             },
             {
                 "name": "show_explored",
-                "description": "Show previously explored seed nodes, most recent first.",
+                "description": "Show previously explored seeds, most recent first.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "kg": {
                             "type": "string",
                             "enum": kgs,
-                            "description": "The knowledge graph for which to show explored seed nodes",
+                            "description": "The knowledge graph for which to show explored seeds",
                         },
                         "page": {
                             "type": "integer",
@@ -58,7 +56,6 @@ def note_function_definitions(managers: list[KgManager]) -> list[dict]:
             },
         ]
     )
-    functions.append(stop)
     return functions
 
 
@@ -70,9 +67,7 @@ def mark_explored(
     explored_this_round: bool,
 ) -> str:
     if explored_this_round:
-        raise FunctionCallException(
-            "A seed node was already marked as explored this round"
-        )
+        raise FunctionCallException("A seed was already marked as explored this round")
 
     manager, _ = find_manager(managers, kg)
     ver_iri = parse_iri_or_literal(iri, manager.iri_literal_parser, manager.prefixes)
@@ -82,7 +77,7 @@ def mark_explored(
     kg_explored = explored.setdefault(kg, [])
     if ver_iri in kg_explored:
         raise FunctionCallException(
-            "This node was already explored in a previous round"
+            "This seed was already explored in a previous round"
         )
 
     kg_explored.append(ver_iri.identifier())
@@ -114,10 +109,25 @@ def show_explored(
     end = page * k
     page_items = kg_explored[start:end]
 
-    header = f"Most recently explored nodes (page {page} of {total_pages}):\n"
+    header = f"Most recently explored seeds (page {page} of {total_pages}):\n"
 
     manager, _ = find_manager(managers, kg)
-    infos = manager.get_info_for_identifiers_from_index(page_items, "entities")
+
+    # seeds may be entities or properties; classify per-iri via cheap local
+    # lookups (same fallback pattern as KgManager.format_sparql_result), then
+    # batch-fetch info per index group
+    groups: dict[str, list[str]] = {"entities": [], "properties": []}
+    for iri in page_items:
+        for idx in ("entities", "properties"):
+            if manager.normalize(iri, idx) is not None:
+                groups[idx].append(iri)
+                break
+
+    infos: dict[str, dict] = {}
+    for idx, ids in groups.items():
+        if ids:
+            infos.update(manager.get_info_for_identifiers_from_index(ids, idx))
+
     items = []
     for iri in page_items:
         alt = manager.build_alternative_with_info(iri, infos.get(iri))

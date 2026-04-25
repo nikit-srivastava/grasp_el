@@ -102,7 +102,7 @@ class FunctionalExplorationTask(GraspTask):
         example_indices: dict | None,
     ) -> str:
         assert isinstance(self.config, NotesConfig)
-        assert self.state is not None, "State must be provided for exploration task"
+        assert isinstance(self.state, FunctionalExplorationState)
         return call_note_function(
             self.state.kg_notes,
             self.state.notes,

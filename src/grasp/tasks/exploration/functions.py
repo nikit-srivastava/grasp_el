@@ -2,7 +2,10 @@ from grasp.manager import KgManager
 from grasp.utils import FunctionCallException, clip, format_notes
 
 
-def note_function_definitions(managers: list[KgManager], general: bool = True) -> list[dict]:
+def note_function_definitions(
+    managers: list[KgManager],
+    general: bool = True,
+) -> list[dict]:
     kgs: list[str | None] = [manager.kg for manager in managers]
     if general:
         kgs.append(None)
@@ -15,7 +18,9 @@ def note_function_definitions(managers: list[KgManager], general: bool = True) -
             desc += " (null for general notes)"
         return {"type": kg_type, "enum": kgs, "description": desc}
 
-    general_or_kg = "general or knowledge graph specific" if general else "knowledge graph specific"
+    general_or_kg = (
+        "general or knowledge graph specific" if general else "knowledge graph specific"
+    )
 
     return [
         {
@@ -106,7 +111,11 @@ def show_notes(notes: list[str]) -> str:
 
 
 def add_note(
-    name: str, notes: list[str], note: str, max_notes: int, max_note_length: int
+    name: str,
+    notes: list[str],
+    note: str,
+    max_notes: int,
+    max_note_length: int,
 ) -> str:
     if len(notes) >= max_notes:
         raise FunctionCallException(f"Cannot add more than {max_notes} {name} notes")
@@ -168,7 +177,13 @@ def call_function(
         name = f'"{kg}"'
 
     if fn_name == "add_note":
-        return add_note(name, notes_to_use, fn_args["note"], max_notes, max_note_length)
+        return add_note(
+            name,
+            notes_to_use,
+            fn_args["note"],
+            max_notes,
+            max_note_length,
+        )
     elif fn_name == "delete_note":
         return delete_note(name, notes_to_use, fn_args["num"])
     elif fn_name == "update_note":

@@ -268,6 +268,7 @@ def generate_questions(
     agent_logger = get_logger("GRASP AGENT", log_level)
 
     managers, _ = setup(config)
+    notes, kg_notes = load_notes(config)
 
     os.makedirs(out_dir, exist_ok=True)
     with open(os.path.join(out_dir, "config.yaml"), "w") as f:
@@ -282,8 +283,8 @@ def generate_questions(
                 state,
                 config,
                 managers,
-                kg_notes={},
-                notes=[],
+                kg_notes,
+                notes,
                 logger=agent_logger,
             )
         )
