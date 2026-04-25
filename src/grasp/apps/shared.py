@@ -2,8 +2,10 @@
 
 import json
 import os
+import re
 from pathlib import Path
 
+import pandas as pd
 import streamlit as st
 from pydantic import ValidationError
 from universal_ml_utils.io import load_json, load_jsonl
@@ -197,6 +199,69 @@ def render_messages(output: dict, new_format: bool = True) -> None:
             st.markdown("---")
 
 
+_TABLE_SEP_RE = re.compile(r"^\s*\|(\s*:?-+:?\s*\|)+\s*$")
+
+
+def _parse_markdown_table(text: str) -> pd.DataFrame | None:
+    """Parse a pipe-delimited markdown table out of `text`.
+
+    Returns a DataFrame if a header + separator + at least one data row
+    can be located, otherwise None. Preserves any prefix/suffix lines.
+    """
+    if not isinstance(text, str) or "|" not in text:
+        return None
+
+    lines = text.splitlines()
+    for i in range(len(lines) - 1):
+        header = lines[i].strip()
+        separator = lines[i + 1].strip()
+        if not header.startswith("|") or not _TABLE_SEP_RE.match(separator):
+            continue
+
+        def split_row(row: str) -> list[str]:
+            row = row.strip()
+            if row.startswith("|"):
+                row = row[1:]
+            if row.endswith("|"):
+                row = row[:-1]
+            return [cell.strip() for cell in row.split("|")]
+
+        headers = split_row(header)
+        rows: list[list[str]] = []
+        for line in lines[i + 2 :]:
+            if not line.strip().startswith("|"):
+                break
+            cells = split_row(line)
+            if len(cells) != len(headers):
+                break
+            rows.append(cells)
+
+        if not rows:
+            return None
+        return pd.DataFrame(rows, columns=headers)
+
+    return None
+
+
+def render_sparql_result(result_data) -> None:
+    """Render a SPARQL result. Parses pipe-table text into a DataFrame when possible."""
+    if result_data is None:
+        return
+    if isinstance(result_data, (dict, list)):
+        st.json(result_data)
+        return
+
+    text = str(result_data)
+    df = _parse_markdown_table(text)
+    if df is not None:
+        st.dataframe(df, hide_index=True, width="stretch")
+        return
+
+    # Surface the "Got N rows and M columns" header line when present,
+    # even if we couldn't parse a table out of the body.
+    st.code(text)
+
+
 def render_output_panel(output_entry: dict | None, *, show_answer: bool = True) -> None:
     """Render SPARQL / Result / Selections / Answer for one output entry.
 
@@ -222,10 +287,7 @@ def render_output_panel(output_entry: dict | None, *, show_answer: bool = True) 
     result_data = output_payload.get("result")
     if result_data is not None:
         st.markdown("**Result**")
-        if isinstance(result_data, (dict, list)):
-            st.json(result_data)
-        else:
-            st.code(str(result_data), language="json")
+        render_sparql_result(result_data)
         rendered_any = True
 
     selections_data = output_payload.get("selections")

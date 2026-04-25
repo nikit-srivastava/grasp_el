@@ -33,7 +33,6 @@ import hashlib
 import os
 import sys
 from collections import Counter
-from pathlib import Path
 
 import streamlit as st
 from universal_ml_utils.configuration import load_config
@@ -44,10 +43,11 @@ from grasp.configs import KgConfig
 from grasp.manager import load_kg_manager
 from grasp.utils import is_invalid_output
 
-from _shared import (
+from grasp.apps.shared import (
     display_name_from_file,
     render_messages,
     render_output_panel,
+    render_sparql_result,
     try_load_model_outputs,
 )
 
@@ -253,6 +253,12 @@ def main() -> None:
         return
 
     show_only_unrated = st.sidebar.checkbox("Only show unrated", value=False)
+    rate_each = st.sidebar.checkbox(
+        "Collect 1-10 scores per candidate",
+        value=False,
+        help="When enabled, shows sliders inside the verdict box so you can also "
+        "rate each candidate individually in addition to picking a winner.",
+    )
     id_pool = [i for i in example_ids if not evaluations.get(i)] if show_only_unrated else example_ids
     if not id_pool:
         st.sidebar.success("All examples have been evaluated 🎉")
@@ -285,42 +291,104 @@ def main() -> None:
     st.title("Blind Expert Evaluation")
     st.markdown(f"**Question:** {sample.get('question', '(no question)')}")
 
-    # Ground truth
-    gt_sparql = sample.get("sparql")
-    if gt_sparql:
-        with st.expander("Ground Truth", expanded=False):
-            st.code(gt_sparql, language="sparql")
-            if args.kg_config:
-                try:
-                    manager = _load_kg_manager_cached(args.kg_config)
-                except Exception as e:
-                    st.error(f"Failed to load KG manager from {args.kg_config}: {e}")
-                else:
-                    gt_key = f"gt_result::{args.kg_config}::{selected_id}"
-                    if gt_key not in st.session_state:
-                        try:
-                            result = manager.execute_sparql(gt_sparql)
-                            st.session_state[gt_key] = {
-                                "ok": True,
-                                "formatted": manager.format_sparql_result(result),
-                            }
-                        except Exception as e:
-                            st.session_state[gt_key] = {"ok": False, "error": str(e)}
-
-                    gt = st.session_state[gt_key]
-                    if gt["ok"]:
-                        st.markdown("**Ground Truth Result**")
-                        st.code(gt["formatted"], language="json")
-                    else:
-                        st.error(f"Failed to execute ground-truth SPARQL: {gt['error']}")
-
-    # Blind candidate columns
+    # Blind candidate ordering (stable per id)
     perm = _candidate_permutation(selected_id, len(prediction_files))
     candidate_entries = []  # list[(letter, canonical_idx, output_entry)]
     for letter_i, canonical_idx in enumerate(perm):
         output_entry = pred_by_file[canonical_idx].get(selected_id)
         candidate_entries.append((_letter(letter_i), canonical_idx, output_entry))
 
+    existing = evaluations.get(selected_id) or {}
+    letters = [_letter(i) for i in range(len(prediction_files))]
+    choice_options = letters + ["Tie"]
+
+    default_choice = "Tie"
+    if existing.get("verdict") is not None:
+        try:
+            canonical_verdict = int(existing["verdict"])
+            letter_idx = perm.index(canonical_verdict)
+            default_choice = _letter(letter_idx)
+        except (ValueError, IndexError):
+            default_choice = "Tie"
+
+    # Top row: ground truth (left) and verdict box (right), 50/50.
+    gt_col, verdict_col = st.columns(2)
+
+    with gt_col:
+        st.markdown("### Ground Truth")
+        gt_sparql = sample.get("sparql")
+        if not gt_sparql:
+            st.info("No ground-truth SPARQL available for this example.")
+        else:
+            with st.container(border=True):
+                st.markdown("**SPARQL**")
+                st.code(gt_sparql, language="sparql")
+                if args.kg_config:
+                    try:
+                        manager = _load_kg_manager_cached(args.kg_config)
+                    except Exception as e:
+                        st.error(f"Failed to load KG manager from {args.kg_config}: {e}")
+                    else:
+                        gt_key = f"gt_result::{args.kg_config}::{selected_id}"
+                        if gt_key not in st.session_state:
+                            try:
+                                result = manager.execute_sparql(gt_sparql)
+                                st.session_state[gt_key] = {
+                                    "ok": True,
+                                    "formatted": manager.format_sparql_result(result),
+                                }
+                            except Exception as e:
+                                st.session_state[gt_key] = {"ok": False, "error": str(e)}
+
+                        gt = st.session_state[gt_key]
+                        if gt["ok"]:
+                            st.markdown("**Result**")
+                            render_sparql_result(gt["formatted"])
+                        else:
+                            st.error(
+                                f"Failed to execute ground-truth SPARQL: {gt['error']}"
+                            )
+
+    with verdict_col:
+        st.markdown("### Your Verdict")
+        with st.container(border=True):
+            with st.form(key=f"verdict_form::{selected_id}"):
+                choice = st.segmented_control(
+                    "Best candidate",
+                    options=choice_options,
+                    default=default_choice,
+                    selection_mode="single",
+                )
+
+                letter_scores: dict[str, int] = {}
+                if rate_each:
+                    st.markdown("**Scores (1-10)**")
+                    score_cols = st.columns(len(prediction_files))
+                    for score_col, (letter, canonical_idx, _) in zip(
+                        score_cols, candidate_entries
+                    ):
+                        prev = None
+                        if existing.get("scores"):
+                            prev = existing["scores"].get(str(canonical_idx))
+                        letter_scores[letter] = score_col.slider(
+                            f"Candidate {letter}",
+                            min_value=1,
+                            max_value=10,
+                            value=int(prev) if prev is not None else 5,
+                            key=f"score::{selected_id}::{letter}",
+                        )
+
+                explanation = st.text_area(
+                    "Notes / explanation (optional)",
+                    value=existing.get("explanation") or "",
+                    height=100,
+                )
+
+                submitted = st.form_submit_button(
+                    "Save", type="primary", use_container_width=True
+                )
+
+    # Blind candidate columns (trace expander on top)
     st.markdown("### Candidates")
     columns_per_row = 3
     for i in range(0, len(candidate_entries), columns_per_row):
@@ -332,64 +400,10 @@ def main() -> None:
                 invalid = output_entry is None or is_invalid_output(output_entry)
                 if invalid and output_entry is not None:
                     st.warning("Invalid output.")
-                render_output_panel(output_entry)
                 if output_entry and "messages" in output_entry:
                     with st.expander("Trace", expanded=False):
                         render_messages(output_entry)
-
-    # Expert input form
-    st.markdown("---")
-    st.markdown("### Your Verdict")
-
-    existing = evaluations.get(selected_id) or {}
-    letters = [_letter(i) for i in range(len(prediction_files))]
-    choice_options = letters + ["Tie"]
-
-    # pre-fill from existing eval
-    default_choice = "Tie"
-    if existing.get("verdict") is not None:
-        try:
-            canonical_verdict = int(existing["verdict"])
-            letter_idx = perm.index(canonical_verdict)
-            default_choice = _letter(letter_idx)
-        except (ValueError, IndexError):
-            default_choice = "Tie"
-
-    with st.form(key=f"verdict_form::{selected_id}"):
-        choice = st.radio(
-            "Best candidate",
-            choice_options,
-            index=choice_options.index(default_choice),
-            horizontal=True,
-        )
-
-        rate_each = st.checkbox(
-            "Rate each candidate (1-10)",
-            value=bool(existing.get("scores")),
-        )
-
-        letter_scores: dict[str, int] = {}
-        if rate_each:
-            score_cols = st.columns(len(prediction_files))
-            for score_col, (letter, canonical_idx, _) in zip(score_cols, candidate_entries):
-                prev = None
-                if existing.get("scores"):
-                    prev = existing["scores"].get(str(canonical_idx))
-                letter_scores[letter] = score_col.slider(
-                    f"Candidate {letter}",
-                    min_value=1,
-                    max_value=10,
-                    value=int(prev) if prev is not None else 5,
-                    key=f"score::{selected_id}::{letter}",
-                )
-
-        explanation = st.text_area(
-            "Notes / explanation (optional)",
-            value=existing.get("explanation") or "",
-            height=100,
-        )
-
-        submitted = st.form_submit_button("Save")
+                render_output_panel(output_entry, show_answer=False)
 
     if submitted:
         if choice == "Tie":

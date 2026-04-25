@@ -31,7 +31,7 @@ from grasp.configs import (
     ServerConfig,
 )
 from grasp.core import generate, load_notes, setup
-from grasp.evaluate import evaluate_f1, evaluate_with_judge
+from grasp.evaluate import evaluate_f1, evaluate_with_expert, evaluate_with_judge
 from grasp.functions import find_manager
 from grasp.notes import (
     take_notes_from_exploration,
@@ -806,45 +806,6 @@ def take_grasp_notes(args: argparse.Namespace) -> None:
         )
 
 
-def _launch_expert_app(args: argparse.Namespace) -> None:
-    import shutil
-    import subprocess
-    from pathlib import Path
-
-    # src/grasp/cli.py -> src/grasp -> src -> repo root -> apps/evaluation/expert.py
-    expert_app = (
-        Path(__file__).resolve().parent.parent.parent / "apps" / "evaluation" / "expert.py"
-    )
-    if not expert_app.exists():
-        print(
-            f"Expert app not found at {expert_app}. Make sure you're running "
-            "from the grasp repository checkout.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    streamlit = shutil.which("streamlit")
-    if streamlit is None:
-        print(
-            "The 'streamlit' executable was not found. Install it with "
-            "`pip install streamlit` to use the expert evaluation app.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    cmd: list[str] = [streamlit, "run", str(expert_app)]
-    if args.port is not None:
-        cmd += ["--server.port", str(args.port)]
-    cmd.append("--")
-    cmd.append(args.input_file)
-    cmd.extend(args.prediction_files)
-    cmd += ["--evaluation", args.evaluation_file]
-    if args.kg_config:
-        cmd += ["--kg-config", args.kg_config]
-
-    subprocess.run(cmd, check=False)
-
-
 def evaluate_grasp(args: argparse.Namespace) -> None:
     eval_cmd = args.evaluate_command
 
@@ -878,7 +839,14 @@ def evaluate_grasp(args: argparse.Namespace) -> None:
         )
 
     elif eval_cmd == "expert":
-        _launch_expert_app(args)
+        evaluate_with_expert(
+            args.input_file,
+            args.prediction_files,
+            args.evaluation_file,
+            args.kg_config,
+            args.port,
+            args.log_level,
+        )
 
 
 def show_grasp(args: argparse.Namespace) -> None:

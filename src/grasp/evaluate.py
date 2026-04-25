@@ -1,9 +1,13 @@
 import json
 import os
 import random
+import shutil
 import string
+import subprocess
+import sys
 from collections import Counter
 from logging import Logger
+from pathlib import Path
 
 from tqdm import tqdm
 from universal_ml_utils.io import dump_json, load_json, load_jsonl
@@ -492,3 +496,51 @@ def evaluate_with_judge(
 
     # reset tool choice to original
     judge_config.tool_choice = tool_choice
+
+
+def evaluate_with_expert(
+    input_file: str,
+    prediction_files: list[str],
+    evaluation_file: str,
+    kg_config: str | None = None,
+    port: int | None = None,
+    log_level: str | int | None = None,
+) -> int:
+    """Launch the blind expert evaluation Streamlit app.
+
+    Blocks until the Streamlit server exits and returns its exit code.
+    """
+    logger = get_logger("GRASP EVALUATION", log_level)
+
+    expert_app = Path(__file__).resolve().parent / "apps" / "expert.py"
+    if not expert_app.exists():
+        logger.error(f"Expert app not found at {expert_app}")
+        return 1
+
+    streamlit = shutil.which("streamlit")
+    if streamlit is None:
+        logger.error(
+            "The 'streamlit' executable was not found. Install it with "
+            "`pip install grasp-rdf[expert]` (or `pip install streamlit`) "
+            "to use the expert evaluation app."
+        )
+        return 1
+
+    cmd: list[str] = [streamlit, "run", str(expert_app)]
+    if port is not None:
+        cmd += ["--server.port", str(port)]
+    cmd.append("--browser.gatherUsageStats=false")
+    cmd.append("--")
+    cmd.append(input_file)
+    cmd.extend(prediction_files)
+    cmd += ["--evaluation", evaluation_file]
+    if kg_config:
+        cmd += ["--kg-config", kg_config]
+
+    logger.info(f"Launching expert app: {' '.join(cmd)}")
+    try:
+        return subprocess.run(cmd, check=False).returncode
+    except KeyboardInterrupt:
+        return 130
+    finally:
+        sys.stdout.flush()

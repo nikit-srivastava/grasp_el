@@ -14,7 +14,7 @@ from universal_ml_utils.logging import get_logger
 
 from grasp.utils import is_invalid_evaluation, is_invalid_output
 
-from _shared import (
+from grasp.apps.shared import (
     _mtime,
     display_name_from_file,
     load_model_outputs,
