@@ -170,7 +170,7 @@ def validate_index_sparql(manager: KgManager, sparql: str):
     parse, _ = parse_string(sparql, manager.sparql_parser)
 
     validate_select_clause(parse, INDEX_SPARQL_SELECT)
-    validate_solution_modifier(parse, INDEX_SPARQL_SELECT)
+    validate_solution_modifier(parse, INDEX_SPARQL_SOL_MOD)
 
 
 INFO_SPARQL_SELECT = "SELECT ?id ?value ?type"
@@ -181,4 +181,4 @@ def validate_info_sparql(manager: KgManager, sparql: str):
     parse, _ = parse_string(sparql, manager.sparql_parser)
 
     validate_select_clause(parse, INFO_SPARQL_SELECT)
-    validate_solution_modifier(parse, INFO_SPARQL_SELECT)
+    validate_solution_modifier(parse, INFO_SPARQL_SOL_MOD)
