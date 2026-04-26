@@ -346,7 +346,7 @@ and repeat, otherwise stop."""
         )
 
         try:
-            validation_fn(manager, sparql)
+            validation_fn(manager.sparql_parser, sparql)
             sparql = manager.fix_prefixes(sparql)
         except ValueError as e:
             raise FunctionCallException(

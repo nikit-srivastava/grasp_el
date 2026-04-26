@@ -45,16 +45,12 @@ class TestQueryType:
 
     def test_complete_construct(self):
         assert (
-            query_type(
-                "CONSTRUCT { ?x ?p ?o } WHERE { ?x ?p ?o }", SPARQL_PARSER
-            )
+            query_type("CONSTRUCT { ?x ?p ?o } WHERE { ?x ?p ?o }", SPARQL_PARSER)
             == "construct"
         )
 
     def test_complete_describe(self):
-        assert (
-            query_type("DESCRIBE ?x WHERE { ?x ?p ?o }", SPARQL_PARSER) == "describe"
-        )
+        assert query_type("DESCRIBE ?x WHERE { ?x ?p ?o }", SPARQL_PARSER) == "describe"
 
     def test_prefix_select_missing_triple(self):
         assert (
@@ -87,9 +83,7 @@ class TestQueryType:
         )
 
     def test_prefix_ask(self):
-        assert (
-            query_type("ASK { ?s ", SPARQL_PARSER, is_prefix=True) == "ask"
-        )
+        assert query_type("ASK { ?s ", SPARQL_PARSER, is_prefix=True) == "ask"
 
     def test_prefix_describe(self):
         assert (
@@ -409,12 +403,7 @@ class TestDeriveConstraintQueryFromPrefix:
         assert "<http://example.org/p1>" in result
 
     def test_returns_constraint_for_two_all_variable_triples(self):
-        query = (
-            "SELECT ?x WHERE { "
-            "?a ?b ?x . "
-            "?x ?c <CUR> "
-            "}"
-        )
+        query = "SELECT ?x WHERE { ?a ?b ?x . ?x ?c <CUR> }"
         prefix = _prefix_from_marked_query(query)
         result, _ = derive_constraint_query_from_prefix(prefix, SPARQL_PARSER)
         assert result is not None
@@ -463,8 +452,7 @@ class TestParseToStringWithWhitespace:
 
     def test_subtree_solution_modifier(self):
         sparql = (
-            "SELECT ?id ?value ?type WHERE {\n  ?s ?p ?o\n} "
-            "ORDER BY ?id ?type ?value"
+            "SELECT ?id ?value ?type WHERE {\n  ?s ?p ?o\n} ORDER BY ?id ?type ?value"
         )
         parse, _ = parse_string(sparql, SPARQL_PARSER)
         sol_mod = find(parse, "SolutionModifier")
@@ -484,10 +472,7 @@ class TestParseToStringWithWhitespace:
         assert out == "SELECT ?x"
 
     def test_subtree_does_not_leak_leading_bytes(self):
-        sparql = (
-            "PREFIX ex: <http://example.org/>\n"
-            "SELECT ?x WHERE { ?x ?p ?o }"
-        )
+        sparql = "PREFIX ex: <http://example.org/>\nSELECT ?x WHERE { ?x ?p ?o }"
         parse, _ = parse_string(sparql, SPARQL_PARSER)
         clause = find(parse, "SelectClause")
         assert clause is not None
