@@ -1,5 +1,9 @@
 from grasp.manager import KgManager
-from grasp.sparql.utils import find, parse_string, parse_to_string
+from grasp.sparql.utils import (
+    find,
+    parse_string,
+    parse_to_string_with_whitespace,
+)
 
 STOP_FUNCTION = {
     "name": "stop",
@@ -136,30 +140,34 @@ def info_functions() -> list[dict]:
     ]
 
 
-def find_select_clause(parse: dict) -> str:
+def clean(s: str) -> str:
+    return "".join(s.split())
+
+
+def find_select_clause(parse: dict, enc: bytes) -> str:
     clause = find(parse, "SelectClause")
     if clause is None:
         raise ValueError("No SELECT clause found in query")
-    return parse_to_string(clause)
+    return parse_to_string_with_whitespace(clause, enc)
 
 
-def find_solution_modifier(parse: dict) -> str:
+def find_solution_modifier(parse: dict, enc: bytes) -> str:
     sol_mod = find(parse, "SolutionModifier")
     if sol_mod is None:
         raise ValueError("No solution modifier found in query")
-    return parse_to_string(sol_mod)
+    return parse_to_string_with_whitespace(sol_mod, enc)
 
 
-def validate_select_clause(parse: dict, target: str):
-    select = find_select_clause(parse)
-    if select.replace(" ", "") != target.replace(" ", ""):
-        raise ValueError(f"SELECT clause must be '{target}'")
+def validate_select_clause(parse: dict, enc: bytes, target: str):
+    select = find_select_clause(parse, enc)
+    if clean(select) != clean(target):
+        raise ValueError(f"SELECT clause must be '{target}', but got '{select}'")
 
 
-def validate_solution_modifier(parse: dict, target: str):
-    sol_mod = find_solution_modifier(parse)
-    if sol_mod.replace(" ", "") != target.replace(" ", ""):
-        raise ValueError(f"Solution modifier must be '{target}'")
+def validate_solution_modifier(parse: dict, enc: bytes, target: str):
+    sol_mod = find_solution_modifier(parse, enc)
+    if clean(sol_mod) != clean(target):
+        raise ValueError(f"Solution modifier must be '{target}', but got '{sol_mod}'")
 
 
 INDEX_SPARQL_SELECT = "SELECT ?id ?value ?tags"
@@ -168,9 +176,10 @@ INDEX_SPARQL_SOL_MOD = "ORDER BY DESC(?score) ?id DESC(?tags)"
 
 def validate_index_sparql(manager: KgManager, sparql: str):
     parse, _ = parse_string(sparql, manager.sparql_parser)
+    enc = sparql.encode()
 
-    validate_select_clause(parse, INDEX_SPARQL_SELECT)
-    validate_solution_modifier(parse, INDEX_SPARQL_SOL_MOD)
+    validate_select_clause(parse, enc, INDEX_SPARQL_SELECT)
+    validate_solution_modifier(parse, enc, INDEX_SPARQL_SOL_MOD)
 
 
 INFO_SPARQL_SELECT = "SELECT ?id ?value ?type"
@@ -179,6 +188,7 @@ INFO_SPARQL_SOL_MOD = "ORDER BY ?id ?type ?value"
 
 def validate_info_sparql(manager: KgManager, sparql: str):
     parse, _ = parse_string(sparql, manager.sparql_parser)
+    enc = sparql.encode()
 
-    validate_select_clause(parse, INFO_SPARQL_SELECT)
-    validate_solution_modifier(parse, INFO_SPARQL_SOL_MOD)
+    validate_select_clause(parse, enc, INFO_SPARQL_SELECT)
+    validate_solution_modifier(parse, enc, INFO_SPARQL_SOL_MOD)

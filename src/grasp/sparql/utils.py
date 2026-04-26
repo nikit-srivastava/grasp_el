@@ -201,24 +201,24 @@ def parse_to_string(parse: dict) -> str:
 
 
 def parse_to_string_with_whitespace(parse: dict, encoded: bytes) -> str:
-    # rebuild string from parse tree, preserving original whitespace
-    # between terminals using byte_span from the encoded input
-    parts = []
-    pos = 0
+    # rebuild string from (sub-)parse tree, preserving original whitespace
+    # between terminals using byte_span from the encoded input. only emits
+    # bytes that lie between the first and last surviving terminal, so the
+    # function is safe to call on a subtree as well as on the root parse.
+    parts: list[str] = []
+    pos: int | None = None
     for terminal in find_terminals(parse):
         byte_span = terminal.get("byte_span")
         if byte_span is not None:
             start, end = byte_span
-            # copy original bytes (whitespace) between previous and this terminal
-            parts.append(encoded[pos:start].decode(errors="replace"))
+            if pos is not None:
+                # copy original bytes (whitespace) between previous and this terminal
+                parts.append(encoded[pos:start].decode(errors="replace"))
             pos = end
         elif parts:
             # newly created terminal without byte_span, add a space separator
             parts.append(" ")
         parts.append(terminal["value"])
-    # copy any remaining bytes after the last terminal
-    if pos < len(encoded):
-        parts.append(encoded[pos:].decode(errors="replace"))
     return "".join(parts)
 
 

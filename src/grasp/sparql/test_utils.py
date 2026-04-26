@@ -4,10 +4,13 @@ from grasp.sparql.utils import (
     SPARQLException,
     complete_prefix,
     derive_constraint_query_from_prefix,
+    find,
     find_connected_top_level_triples,
     fix_prefixes,
     load_iri_and_literal_parser,
     load_sparql_parser,
+    parse_string,
+    parse_to_string_with_whitespace,
     query_type,
 )
 
@@ -428,3 +431,65 @@ class TestDeriveConstraintQueryFromPrefix:
         prefix = _prefix_from_marked_query(query)
         result, _ = derive_constraint_query_from_prefix(prefix, SPARQL_PARSER)
         assert result is None
+
+
+class TestParseToStringWithWhitespace:
+    def _roundtrip(self, sparql: str) -> str:
+        parse, _ = parse_string(sparql, SPARQL_PARSER)
+        return parse_to_string_with_whitespace(parse, sparql.encode())
+
+    def test_root_roundtrip_simple(self):
+        sparql = "SELECT ?s WHERE { ?s ?p ?o }"
+        assert self._roundtrip(sparql) == sparql
+
+    def test_root_roundtrip_preserves_internal_whitespace(self):
+        sparql = "SELECT  ?s\n  ?p\nWHERE {\n  ?s  ?p   ?o .\n} LIMIT 10"
+        assert self._roundtrip(sparql) == sparql
+
+    def test_root_roundtrip_preserves_trailing_clause(self):
+        sparql = "SELECT ?s WHERE { ?s ?p ?o } LIMIT 10"
+        assert self._roundtrip(sparql) == sparql
+
+    def test_subtree_select_clause(self):
+        sparql = (
+            "SELECT ?id ?value ?tags WHERE {\n  ?s ?p ?o\n} "
+            "ORDER BY DESC(?score) ?id DESC(?tags)"
+        )
+        parse, _ = parse_string(sparql, SPARQL_PARSER)
+        clause = find(parse, "SelectClause")
+        assert clause is not None
+        out = parse_to_string_with_whitespace(clause, sparql.encode())
+        assert out == "SELECT ?id ?value ?tags"
+
+    def test_subtree_solution_modifier(self):
+        sparql = (
+            "SELECT ?id ?value ?type WHERE {\n  ?s ?p ?o\n} "
+            "ORDER BY ?id ?type ?value"
+        )
+        parse, _ = parse_string(sparql, SPARQL_PARSER)
+        sol_mod = find(parse, "SolutionModifier")
+        assert sol_mod is not None
+        out = parse_to_string_with_whitespace(sol_mod, sparql.encode())
+        assert out == "ORDER BY ?id ?type ?value"
+
+    def test_subtree_does_not_leak_trailing_bytes(self):
+        # regression: parse_to_string_with_whitespace used to append
+        # encoded[pos:] unconditionally, leaking everything after the
+        # subtree's last terminal into the result
+        sparql = "SELECT ?x WHERE { ?x ?p ?o } ORDER BY ?x LIMIT 5"
+        parse, _ = parse_string(sparql, SPARQL_PARSER)
+        clause = find(parse, "SelectClause")
+        assert clause is not None
+        out = parse_to_string_with_whitespace(clause, sparql.encode())
+        assert out == "SELECT ?x"
+
+    def test_subtree_does_not_leak_leading_bytes(self):
+        sparql = (
+            "PREFIX ex: <http://example.org/>\n"
+            "SELECT ?x WHERE { ?x ?p ?o }"
+        )
+        parse, _ = parse_string(sparql, SPARQL_PARSER)
+        clause = find(parse, "SelectClause")
+        assert clause is not None
+        out = parse_to_string_with_whitespace(clause, sparql.encode())
+        assert out == "SELECT ?x"
