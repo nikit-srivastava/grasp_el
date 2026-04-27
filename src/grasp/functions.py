@@ -309,9 +309,9 @@ search_property_of_entity(kg="wikidata", entity="wd:Q937", query="birth", page=1
                 {
                     "name": "search_object_of_property",
                     "description": f"""\
-Search for entities at the object position for a given property in the knowledge graph. \
-At most {search_k} results are returned per page (use pagination \
-up to page {search_max_pages} to see more results).
+Search for entities at the object position for a given property in the \
+knowledge graph. At most {search_k} results are returned per page \
+(use pagination up to page {search_max_pages} to see more results).
 
 For example, to search for football jobs in Wikidata, do the following:
 search_object_of_property(kg="wikidata", property="wdt:P106", query="football", page=1)""",
