@@ -5,9 +5,12 @@ from grasp.utils import FunctionCallException, clip, format_notes
 def note_function_definitions(
     managers: list[KgManager],
     general: bool = True,
+    kg_specific: bool = True,
 ) -> list[dict]:
-    kgs: list[str | None] = [manager.kg for manager in managers]
-    if general:
+    assert general or kg_specific, "at least one of general or kg_specific must be True"
+
+    kgs: list[str | None] = [manager.kg for manager in managers] if kg_specific else []
+    if general and kg_specific:
         kgs.append(None)
 
     kg_type: str | list[str] = ["string", "null"] if general else "string"
@@ -18,77 +21,67 @@ def note_function_definitions(
             desc += " (null for general notes)"
         return {"type": kg_type, "enum": kgs, "description": desc}
 
-    general_or_kg = (
-        "general or knowledge graph specific" if general else "knowledge graph specific"
-    )
+    if general and kg_specific:
+        general_or_kg = "general or knowledge graph specific"
+    elif kg_specific:
+        general_or_kg = "knowledge graph specific"
+    else:
+        general_or_kg = "general"
+
+    add_props = {"note": {"type": "string", "description": "The note to add"}}
+    add_req = ["note"]
+    del_props = {
+        "num": {"type": "number", "description": "The number of the note to delete"}
+    }
+    del_req = ["num"]
+    upd_props = {
+        "num": {
+            "type": "number",
+            "description": "The number of the note to update",
+        },
+        "note": {
+            "type": "string",
+            "description": "The new note replacing the old one",
+        },
+    }
+    upd_req = ["num", "note"]
+    show_props: dict = {}
+    show_req: list[str] = []
+
+    def build(verb: str, props: dict, required: list[str]) -> dict:
+        if kg_specific:
+            props = {"kg": kg_property(verb), **props}
+            required = ["kg", *required]
+        return {
+            "type": "object",
+            "properties": props,
+            "required": required,
+            "additionalProperties": False,
+        }
 
     return [
         {
             "name": "add_note",
             "description": f"Add a {general_or_kg} note.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "kg": kg_property("add"),
-                    "note": {
-                        "type": "string",
-                        "description": "The note to add",
-                    },
-                },
-                "required": ["kg", "note"],
-                "additionalProperties": False,
-            },
+            "parameters": build("add", add_props, add_req),
             "strict": True,
         },
         {
             "name": "delete_note",
             "description": f"Delete a {general_or_kg} note.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "kg": kg_property("delete"),
-                    "num": {
-                        "type": "number",
-                        "description": "The number of the note to delete",
-                    },
-                },
-                "required": ["kg", "num"],
-                "additionalProperties": False,
-            },
+            "parameters": build("delete", del_props, del_req),
             "strict": True,
         },
         {
             "name": "update_note",
             "description": f"Update a {general_or_kg} note.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "kg": kg_property("update"),
-                    "num": {
-                        "type": "number",
-                        "description": "The number of the note to update",
-                    },
-                    "note": {
-                        "type": "string",
-                        "description": "The new note replacing the old one",
-                    },
-                },
-                "required": ["kg", "num", "note"],
-                "additionalProperties": False,
-            },
+            "parameters": build("update", upd_props, upd_req),
             "strict": True,
         },
         {
             "name": "show_notes",
             "description": f"Show current {general_or_kg} notes.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "kg": kg_property("show"),
-                },
-                "required": ["kg"],
-                "additionalProperties": False,
-            },
+            "parameters": build("show", show_props, show_req),
             "strict": True,
         },
         {

@@ -8,12 +8,11 @@ from grasp.tasks.base import GraspTask
 from grasp.tasks.exploration import shared_rules
 from grasp.tasks.exploration.functions import call_function as call_note_function
 from grasp.tasks.exploration.functions import note_function_definitions
-from grasp.utils import format_kg_notes, format_notes
+from grasp.utils import format_notes
 
 
 class FunctionalExplorationState(BaseModel):
     notes: list[str] = []
-    kg_notes: dict[str, list[str]] = {}
 
 
 def rules() -> list[str]:
@@ -22,9 +21,6 @@ def rules() -> list[str]:
 graphs themselves. Instead, focus on functional insights: how the \
 provided functions behave, when they are most useful, and what their \
 limitations are.",
-        "Prefer general notes for functional insights that apply across \
-knowledge graphs. Use knowledge graph specific notes only for behaviors \
-that differ between knowledge graphs.",
     ]
 
 
@@ -35,9 +31,8 @@ You are a note-taking assistant. Your task is to \
 explore the provided functions and take notes about them using the \
 provided note-taking functions.
 
-You are limited to a maximum of {config.max_notes} notes \
-per knowledge graph, plus {config.max_notes} general notes for insights that apply \
-across knowledge graphs. Each note is limited to a maximum of \
+You are limited to a maximum of {config.max_notes} general notes \
+that apply across knowledge graphs. Each note is limited to a maximum of \
 {config.max_note_length} characters to ensure it is concise and to the point.
 
 Your notes should help you to better understand and use the provided \
@@ -68,16 +63,12 @@ def output(state: FunctionalExplorationState) -> dict:
     formatted = f"""\
 Exploration completed.
 
-Knowledge graph specific notes:
-{format_kg_notes(state.kg_notes)}
-
 General notes across knowledge graphs:
 {format_notes(state.notes)}"""
 
     return {
         "type": "output",
         "notes": state.notes,
-        "kg_notes": state.kg_notes,
         "formatted": formatted,
     }
 
@@ -92,7 +83,7 @@ class FunctionalExplorationTask(GraspTask):
         return rules()
 
     def function_definitions(self) -> list[dict]:
-        return note_function_definitions(self.managers)
+        return note_function_definitions(self.managers, kg_specific=False)
 
     def call_function(
         self,
@@ -104,7 +95,7 @@ class FunctionalExplorationTask(GraspTask):
         assert isinstance(self.config, NotesConfig)
         assert isinstance(self.state, FunctionalExplorationState)
         return call_note_function(
-            self.state.kg_notes,
+            {},  # functional task does not write KG-specific notes
             self.state.notes,
             fn_name,
             fn_args,

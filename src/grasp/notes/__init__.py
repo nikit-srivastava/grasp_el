@@ -224,10 +224,9 @@ def take_notes_from_exploration(
     assert isinstance(config, NotesFromExplorationConfig)
     if config.mode == "functional":
         task_name = "exploration_functional"
-        state = FunctionalExplorationState(notes=notes, kg_notes=kg_notes)
+        state = FunctionalExplorationState(notes=notes)
         # rebind
         notes = state.notes
-        kg_notes = state.kg_notes
     elif config.mode == "structural":
         task_name = "exploration_structural"
         state = StructuralExplorationState(kg_notes=kg_notes)
@@ -251,14 +250,17 @@ def take_notes_from_exploration(
 
         dump_json(output, os.path.join(out_dir, f"output.exploration.round_{r}.json"))
 
-        for kg, kg_specific_notes in kg_notes.items():
-            out_file = os.path.join(out_dir, f"notes.exploration.{kg}.round_{r}.json")
-            dump_json(kg_specific_notes, out_file, indent=2)
-            link(out_file, os.path.join(out_dir, f"notes.exploration.{kg}.json"))
-
-        out_file = os.path.join(out_dir, f"notes.exploration.round_{r}.json")
-        dump_json(notes, out_file, indent=2)
-        link(out_file, os.path.join(out_dir, "notes.exploration.json"))
+        if config.mode == "structural":
+            for kg, kg_specific_notes in kg_notes.items():
+                out_file = os.path.join(
+                    out_dir, f"notes.exploration.{kg}.round_{r}.json"
+                )
+                dump_json(kg_specific_notes, out_file, indent=2)
+                link(out_file, os.path.join(out_dir, f"notes.exploration.{kg}.json"))
+        else:
+            out_file = os.path.join(out_dir, f"notes.exploration.round_{r}.json")
+            dump_json(notes, out_file, indent=2)
+            link(out_file, os.path.join(out_dir, "notes.exploration.json"))
 
 
 def generate_questions(
