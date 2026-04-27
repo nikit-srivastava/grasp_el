@@ -21,6 +21,8 @@ def rules() -> list[str]:
 graphs themselves. Instead, focus on functional insights: how the \
 provided functions behave, when they are most useful, and what their \
 limitations are.",
+        "Do not take notes on the note-taking functions themselves, as \
+they will not be available in downstream tasks.",
     ]
 
 
