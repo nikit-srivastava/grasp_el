@@ -49,13 +49,14 @@ from grasp.sparql.utils import (
     execute,
     find_longest_prefix,
     fix_prefixes,
+    format_identifier,
     format_iri,
     get_qlever_endpoint,
     load_iri_and_literal_parser,
     load_sparql_parser,
+    prepare_identifier_for_sparql,
     prettify,
     query_type,
-    wrap_iri,
 )
 from grasp.utils import (
     clip,
@@ -300,13 +301,33 @@ class KgManager:
     def find_longest_prefix(self, iri: str) -> tuple[str, str] | None:
         return find_longest_prefix(iri, self.prefixes)
 
+    def format_identifier(
+        self,
+        identifier: str,
+        base_uri: str | None = None,
+        wrap: bool = False,
+    ) -> str:
+        return format_identifier(
+            identifier,
+            self.iri_literal_parser,
+            self.prefixes,
+            base_uri,
+            wrap,
+        )
+
     def format_iri(
         self,
         iri: str,
         base_uri: str | None = None,
         wrap: bool = False,
     ) -> str:
-        return format_iri(iri, self.iri_literal_parser, self.prefixes, base_uri, wrap)
+        return format_iri(
+            iri,
+            self.iri_literal_parser,
+            self.prefixes,
+            base_uri,
+            wrap,
+        )
 
     def fix_prefixes(
         self,
@@ -445,7 +466,7 @@ class KgManager:
 
         return Alternative(
             identifier=identifier,
-            short_identifier=self.format_iri(identifier),
+            short_identifier=self.format_identifier(identifier),
             label=label,
             variants=variants,
             aliases=aliases,
@@ -580,7 +601,7 @@ class KgManager:
             raise SPARQLException("SPARQL query is not a SELECT query", sparql)
 
         self.logger.debug(
-            f"Getting candidate IDs for index '{index_name}' with {sparql}"
+            f'Getting candidate IDs for index "{index_name}" with {sparql}'
         )
         result = self.execute_sparql(sparql, request_timeout, read_timeout, max_retries)
 
@@ -596,7 +617,7 @@ class KgManager:
             )
 
         self.logger.debug(
-            f"Got {len(result):,} candidate items for index '{index_name}'"
+            f'Got {len(result):,} candidate items for index "{index_name}"'
         )
 
         normalizer = self.get_normalizer(index_name)
@@ -605,15 +626,15 @@ class KgManager:
         identifier_map: dict[str, list[str]] = {}
         for bindings in result.bindings():
             binding = next(iter(bindings), None)
-            if binding is None or binding.typ != "uri":
+            if binding is None:
                 continue
 
-            iri = binding.identifier()
+            identifier = binding.identifier()
 
-            norm = normalizer.normalize(iri)
+            norm = normalizer.normalize(identifier)
             if norm is not None:
                 normalized_iri, variant = norm
-                if data.id_from_identifier(normalized_iri) is not None:
+                if data.id_from_identifier(normalized_iri) is None:
                     if normalized_iri not in identifier_map:
                         identifier_map[normalized_iri] = []
                     if variant is not None:
@@ -621,9 +642,9 @@ class KgManager:
                     continue
 
             # direct match fallback
-            if data.id_from_identifier(iri) is not None:
-                if iri not in identifier_map:
-                    identifier_map[iri] = []
+            if data.id_from_identifier(identifier) is not None:
+                if identifier not in identifier_map:
+                    identifier_map[identifier] = []
 
         return identifier_map
 
@@ -639,7 +660,11 @@ class KgManager:
                 "SPARQL must contain {IDS} placeholder for identifiers"
             )
             info_sparql = info_sparql.replace(
-                "{IDS}", " ".join(wrap_iri(id) for id in identifiers)
+                "{IDS}",
+                " ".join(
+                    prepare_identifier_for_sparql(identifier, self.iri_literal_parser)
+                    for identifier in identifiers
+                ),
             )
             self.logger.debug(f"Retrieving infos with SPARQL:\n{info_sparql}")
             result = self.execute_sparql(
@@ -656,7 +681,7 @@ class KgManager:
             type_var = result.variables[2]
             for row in result.rows():
                 assert id_var in row, "Identifier column not found in result row"
-                assert row[id_var].typ == "uri"
+                assert row[id_var].typ in ("uri", "literal")
                 assert row[text_var].typ == "literal"
                 assert row[type_var].typ == "literal"
 
@@ -765,6 +790,8 @@ class KgManager:
 DEFAULT_DESCRIPTIONS = {
     "entities": "Entities indexed by their labels and synonyms",
     "properties": "Properties indexed by their labels, synonyms, and IRIs",
+    "literals": "Free-floating literal values (e.g. enumerable string values "
+    "used as objects, not entity-associated labels)",
 }
 
 
@@ -814,7 +841,7 @@ def load_kg_manager(cfg: KgConfig, skip_indices: bool = False) -> KgManager:
     ent_index = try_load_index(
         cfg.kg,
         "entities",
-        cfg.entities_type or "fuzzy",
+        cfg.entities_type,
         logger,
     )
     if ent_index is not None:
@@ -823,11 +850,25 @@ def load_kg_manager(cfg: KgConfig, skip_indices: bool = False) -> KgManager:
     prop_index = try_load_index(
         cfg.kg,
         "properties",
-        cfg.properties_type or "embedding",
+        cfg.properties_type,
         logger,
     )
     if prop_index is not None:
         indices["properties"] = prop_index
+
+    # Auto-load the literals index whenever it was built (i.e. the data
+    # dir exists); only attempt if explicitly opted in or auto-detected
+    # so we don't log spurious warnings for KGs that never had literals.
+    literals_dir = os.path.join(get_index_dir(cfg.kg), "literals")
+    if cfg.literals_type is not None or os.path.exists(literals_dir):
+        lit_index = try_load_index(
+            cfg.kg,
+            "literals",
+            cfg.literals_type,
+            logger,
+        )
+        if lit_index is not None:
+            indices["literals"] = lit_index
 
     others = load_other_indices(cfg.kg, cfg.indices)
     for name, index in others.items():
