@@ -39,8 +39,7 @@ def index_functions(index_name: str = "entities") -> list[dict]:
         },
         {
             "name": "set_query",
-            "description": "Set the index or info SPARQL query for the knowledge graph. "
-            "Pass sparql=null to clear / unset the current query.",
+            "description": "Set or clear the index or info SPARQL query for the knowledge graph.",
             "parameters": {
                 "type": "object",
                 "properties": {
