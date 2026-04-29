@@ -1215,6 +1215,8 @@ SELECT ?s ?p ?o WHERE {{
         clip_literals=not unclipped,
         table_only=True,
     )
+    if not table:
+        return f"No triples (page {page})"
 
     return f"Triples (page {page}):\n{table}"
 

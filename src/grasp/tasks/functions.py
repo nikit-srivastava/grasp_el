@@ -124,6 +124,10 @@ LIMIT {page * k}"""
     end = page * k
     result.data = result.data[start:end]
 
+    plural = "properties" if position == "property" else f"{position}s"
+    if len(result) == 0:
+        return f"No {plural} (page {page})"
+
     # update known
     update_known_from_rows(
         known,
@@ -155,7 +159,6 @@ LIMIT {page * k}"""
 
         items.append(f"{formatted} - {freq} occurrences")
 
-    plural = "properties" if position == "property" else f"{position}s"
     return f"Most frequent {plural} (page {page}):\n" + format_enumerate(
         items, start=(page - 1) * k
     )

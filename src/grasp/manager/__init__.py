@@ -172,7 +172,10 @@ class KgManager:
             return f"Got result{tmf}:\n{result.boolean}"
 
         if result.num_rows == 0:
-            return f"Got no rows and {result.num_columns:,} columns" + tmf
+            if table_only:
+                return ""
+
+            return f"Got 0 rows and {result.num_columns:,} columns" + tmf
 
         assert column_names is None or len(column_names) == result.num_columns, (
             f"Expected {result.num_columns:,} column names"
