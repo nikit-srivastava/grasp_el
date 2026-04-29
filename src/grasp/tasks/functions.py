@@ -1,6 +1,6 @@
 from grasp.functions import (
     find_manager,
-    format_verification_error,
+    format_iri_or_literal_error,
     parse_iri_or_literal,
     update_known_from_rows,
 )
@@ -98,7 +98,7 @@ def find_frequent(
             manager.prefixes,
         )
         if ver_const is None or (pos != Position.OBJECT and ver_const.typ != "uri"):
-            raise FunctionCallException(format_verification_error(const, pos))
+            raise FunctionCallException(format_iri_or_literal_error(const, pos))
 
         pos_values.append(ver_const.sparql())
 

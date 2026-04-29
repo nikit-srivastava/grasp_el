@@ -1,4 +1,9 @@
-from grasp.functions import find_manager, parse_iri_or_literal
+from grasp.functions import (
+    find_manager,
+    format_bnode_error,
+    format_iri_or_literal_error,
+    parse_iri_or_literal,
+)
 from grasp.manager import KgManager
 from grasp.tasks.exploration.functions import (
     note_function_definitions as base_note_function_definitions,
@@ -71,8 +76,10 @@ def mark_explored(
 
     manager, _ = find_manager(managers, kg)
     ver_iri = parse_iri_or_literal(iri, manager.iri_literal_parser, manager.prefixes)
+    if ver_iri is not None and ver_iri.typ == "bnode":
+        raise FunctionCallException(format_bnode_error(iri))
     if ver_iri is None or ver_iri.typ != "uri":
-        raise FunctionCallException(f'"{iri}" is not a valid IRI')
+        raise FunctionCallException(format_iri_or_literal_error(iri))
 
     kg_explored = explored.setdefault(kg, [])
     if ver_iri in kg_explored:

@@ -1047,9 +1047,17 @@ def parse_iri_or_literal(
     return binding
 
 
-def format_verification_error(value: str, position: Position) -> str:
-    expected = "IRI" if position != Position.OBJECT else "IRI or literal"
-    return f'Value "{value}" for {position} is not a valid {expected}. \
+def format_bnode_error(value: str) -> str:
+    return (
+        f'Value "{value}" is a blank node. Blank nodes cannot be used as constraints '
+        "because they behave like variables in SPARQL and do not refer to a specific node."
+    )
+
+
+def format_iri_or_literal_error(value: str, position: Position | None = None) -> str:
+    expected = "IRI or literal" if position == Position.OBJECT else "IRI"
+    pos_str = f" for {position}" if position is not None else ""
+    return f'Value "{value}"{pos_str} is not a valid {expected}. \
 IRIs can be given in prefixed form, like wd:Q937, or in full form, \
 like <http://www.wikidata.org/entity/Q937> or \
 http://www.wikidata.org/entity/Q937. Be aware that not all IRIs can be \
@@ -1087,8 +1095,10 @@ def list_triples(
             manager.iri_literal_parser,
             manager.prefixes,
         )
+        if ver_const is not None and ver_const.typ == "bnode":
+            raise FunctionCallException(format_bnode_error(const))
         if ver_const is None or (pos != Position.OBJECT and ver_const.typ != "uri"):
-            raise FunctionCallException(format_verification_error(const, pos))
+            raise FunctionCallException(format_iri_or_literal_error(const, pos))
 
         bindings.append(f"BIND({ver_const.sparql()} AS ?{pos.value[0]})")
         triple.append(ver_const.sparql())
@@ -1276,8 +1286,10 @@ def search_with_constraints(
                 manager.iri_literal_parser,
                 manager.prefixes,
             )
+            if ver_const is not None and ver_const.typ == "bnode":
+                raise FunctionCallException(format_bnode_error(const))
             if ver_const is None or (pos != Position.OBJECT and ver_const.typ != "uri"):
-                raise FunctionCallException(format_verification_error(const, pos))
+                raise FunctionCallException(format_iri_or_literal_error(const, pos))
 
             pos_values[pos] = ver_const.sparql()
 
