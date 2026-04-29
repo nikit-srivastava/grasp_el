@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+from dataclasses import replace
 from typing import Any, Iterable
 
 from search_rdf import Data, EmbeddingIndex
@@ -51,6 +52,7 @@ from grasp.sparql.utils import (
     fix_prefixes,
     format_identifier,
     format_iri,
+    format_literal,
     get_qlever_endpoint,
     load_iri_and_literal_parser,
     load_sparql_parser,
@@ -200,41 +202,32 @@ class KgManager:
                 val = row.get(var, None)
                 if val is None:
                     formatted_row.append("")
+                    continue
 
-                elif val.typ == "bnode":
+                if val.typ == "bnode":
                     formatted_row.append(val.identifier())
 
                 elif val.typ == "literal":
-                    formatted = clip(val.value) if clip_literals else val.value
-                    if val.lang is not None:
-                        formatted += f" (lang:{val.lang})"
-                    elif val.datatype is not None:
-                        datatype = self.format_iri(val.datatype)
-                        formatted += f" ({datatype})"
+                    if clip_literals:
+                        # replace to modify value
+                        # without messing up original result
+                        val = replace(val, value=clip(val.value))
 
-                    formatted_row.append(formatted)
+                    formatted_row.append(self.format_literal(val.identifier()))
 
                 else:
                     assert val.typ == "uri"
                     identifier = val.identifier()
                     formatted = self.format_iri(identifier)
 
-                    # for uri check whether it is in one of the datasets
-                    index = "entities"
-                    norm = self.normalize(identifier, index)
+                    label = self.get_label(
+                        identifier,
+                        "entities",
+                    ) or self.get_label(identifier, "properties")
 
-                    if norm is None or self.get_label(norm[0], index) is None:
-                        index = "properties"
-                        norm = self.normalize(identifier, index)
+                    if label is not None:
+                        formatted = f"{clip(label)} ({formatted})"
 
-                    # still not found, just output the formatted iri
-                    if norm is None or self.get_label(norm[0], index) is None:
-                        formatted_row.append(formatted)
-                        continue
-
-                    label = self.get_label(norm[0], index)
-                    assert label is not None, "should not happen"
-                    formatted = f"{clip(label)} ({formatted})"
                     formatted_row.append(formatted)
 
             return formatted_row
@@ -329,6 +322,18 @@ class KgManager:
             wrap,
         )
 
+    def format_literal(
+        self,
+        literal: str,
+        base_uri: str | None = None,
+    ) -> str:
+        return format_literal(
+            literal,
+            self.iri_literal_parser,
+            self.prefixes,
+            base_uri,
+        )
+
     def fix_prefixes(
         self,
         sparql: str,
@@ -414,6 +419,10 @@ class KgManager:
         data = self.try_get_data(index_name)
         if data is None:
             return None
+
+        norm = self.normalize(identifier, index_name)
+        if norm is not None:
+            identifier = norm[0]
 
         id = data.id_from_identifier(identifier)
         if id is None:

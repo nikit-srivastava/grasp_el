@@ -1216,7 +1216,7 @@ SELECT ?s ?p ?o WHERE {{
         table_only=True,
     )
 
-    return f"Showing {len(result)} triples from page {page}:\n{table}"
+    return f"Triples (page {page}):\n{table}"
 
 
 def search_with_constraints(
@@ -1327,14 +1327,14 @@ def format_index_alternatives(
     page: int = 1,
 ) -> str:
     if not alternatives:
-        return f"No results found on page {page}"
+        return f"No results (page {page})"
 
     start_index = (page - 1) * k
     lines = "\n".join(
         f"{start_index + i + 1}. {alt.get_selection_string()}"
         for i, alt in enumerate(alternatives)
     )
-    return f"Showing {len(alternatives)} results from page {page}:\n{lines}"
+    return f"Results (page {page}):\n{lines}"
 
 
 def search_with_filter(

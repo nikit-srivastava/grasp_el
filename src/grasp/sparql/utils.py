@@ -1016,6 +1016,30 @@ def prepare_identifier_for_sparql(identifier: str, parser: LR1Parser) -> str:
     return binding.sparql()
 
 
+def format_literal(
+    literal: str,
+    parser: LR1Parser,
+    prefixes: dict[str, str],
+    base_uri: str | None = None,
+) -> str:
+    binding = parse_into_binding(literal, parser, prefixes)
+
+    if binding is None:
+        return literal
+
+    if binding.typ == "literal" and binding.datatype is not None:
+        formatted_dt = format_iri(
+            binding.datatype,
+            parser,
+            prefixes,
+            base_uri,
+            wrap=True,
+        )
+        return f'"{binding.value}"^^{formatted_dt}'
+
+    return binding.identifier()
+
+
 def format_identifier(
     identifier: str,
     parser: LR1Parser,
@@ -1032,17 +1056,10 @@ def format_identifier(
         return identifier
 
     if binding.typ == "uri":
-        return format_iri(binding.value, parser, prefixes, base_uri, wrap)
+        return format_iri(identifier, parser, prefixes, base_uri, wrap)
 
-    elif binding.typ == "literal" and binding.datatype is not None:
-        formatted_dt = format_iri(
-            binding.datatype,
-            parser,
-            prefixes,
-            base_uri,
-            wrap=True,
-        )
-        return f'"{binding.value}"^^{formatted_dt}'
+    elif binding.typ == "literal":
+        return format_literal(identifier, parser, prefixes, base_uri)
 
     return binding.identifier()
 

@@ -6,7 +6,7 @@ from grasp.functions import (
 )
 from grasp.manager import KgManager
 from grasp.sparql.types import Position, SelectResult
-from grasp.utils import FunctionCallException
+from grasp.utils import FunctionCallException, format_enumerate
 
 
 def find_frequent_function_definition(kgs: list[str], k: int) -> dict:
@@ -125,20 +125,39 @@ LIMIT {page * k}"""
     result.data = result.data[start:end]
 
     # update known
-    update_known_from_rows(known, result.rows(), manager.get_normalizer("entities"))
-    update_known_from_rows(known, result.rows(), manager.get_normalizer("properties"))
+    if "entities" in manager.indices:
+        update_known_from_rows(
+            known,
+            result.rows(),
+            manager.get_normalizer("entities"),
+        )
+    if "properties" in manager.indices:
+        update_known_from_rows(
+            known,
+            result.rows(),
+            manager.get_normalizer("properties"),
+        )
 
-    table = manager.format_sparql_result(
-        result,
-        show_top_rows=k,
-        show_bottom_rows=0,
-        show_left_columns=2,
-        show_right_columns=0,
-        column_names=[position, "frequency"],
-        clip_literals=False,
-        table_only=True,
+    target_var = position[0]
+    items = []
+    for row in result.rows():
+        val = row[target_var]
+        freq = row["freq"].value
+        identifier = val.identifier()
+        formatted = manager.format_identifier(identifier)
+
+        if val.typ == "uri":
+            label = manager.get_label(
+                identifier,
+                "entities",
+            ) or manager.get_label(identifier, "properties")
+
+            if label is not None:
+                formatted = f"{label} ({formatted})"
+
+        items.append(f"{formatted} - {freq} occurrences")
+
+    plural = "properties" if position == "property" else f"{position}s"
+    return f"Most frequent {plural} (page {page}):\n" + format_enumerate(
+        items, start=(page - 1) * k
     )
-
-    if position == "property":
-        position = "propertie"
-    return f"Showing page {page} of most frequent {position}s:\n{table}"
