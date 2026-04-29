@@ -403,8 +403,6 @@ def prepare_ground_truths(
 
 
 def note_taking_instructions(
-    kg_notes: dict[str, list[str]],
-    notes: list[str],
     outputs: list[dict],
     ground_truths: list[str] | None = None,
 ) -> str:
@@ -435,15 +433,9 @@ Agent trace:
     fmt = "\n\n".join(formatted)
 
     return f"""\
-Add to, delete from, or update the following notes (which might \
-be the same notes provided to the agent) based on the given agent traces \
-below.
-
-Knowledge graph specific notes:
-{format_kg_notes(kg_notes, enumerated=True)}
-
-General notes across knowledge graphs:
-{format_notes(notes, enumerated=True)}
+Look at the current notes (which might be the same notes provided \
+to the agent). Then add to, delete from, or update them based on the \
+given agent traces below.
 
 {fmt}"""
 
@@ -464,7 +456,7 @@ def take_notes(
         ),
         Message(
             role="user",
-            content=note_taking_instructions(kg_notes, notes, outputs, ground_truths),
+            content=note_taking_instructions(outputs, ground_truths),
         ),
     ]
 
@@ -526,7 +518,14 @@ def take_notes(
     return {
         "type": "output",
         "output": {
-            "formatted": "Note taking completed",
+            "formatted": f"""\
+Note taking completed.
+
+Notes for knowledge graphs:
+{format_kg_notes(kg_notes)}
+
+General notes:
+{format_notes(notes)}""",
         },
         "messages": [msg.model_dump() for msg in messages],
         "elapsed": end - start,

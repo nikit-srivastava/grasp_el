@@ -23,11 +23,13 @@ def rules() -> list[str]:
         "Prioritize diversity in topic, difficulty, and style over correctness "
         "or guaranteed answerability. Real users sometimes ask questions a knowledge "
         "graph cannot fully answer; emulating that variety is part of the goal.",
-        "Verifying that a question is answerable is optional. You may explore "
-        "the knowledge graph or draft and execute a SPARQL query to soft-verify, "
-        "but you may also submit purely speculative questions without verification.",
-        "Before submitting, call show_questions for the relevant knowledge graph "
-        "to avoid near-duplicates of questions you have already submitted.",
+        "Verifying that a question is answerable is optional. You may validate "
+        "the existence of related entities or properties, or draft and execute a "
+        "SPARQL query to soft-verify, but you may also submit purely speculative "
+        "questions without verification.",
+        "Aim for a roughly equal distribution of questions across the available "
+        "knowledge graphs. Where appropriate, you may also submit questions "
+        "that span multiple knowledge graphs.",
     ]
 
 
@@ -37,33 +39,23 @@ You are emulating a user posing questions over the available knowledge graphs. \
 Your task is to produce a diverse pool of plausible user questions \
 that real users might ask, with the help of the provided functions.
 
-Real users do not know upfront what a knowledge graph can or cannot answer, so \
-the pool should include questions across a range of difficulties (e.g. easy, \
-medium, hard) and styles (e.g. factual, aggregate, comparative, boolean, \
-multi-hop, superlative, conversational, ambiguous, ...). These are examples \
-to inspire variety, not a fixed taxonomy.
-
 You should follow a step-by-step approach:
-1. Look at the already existing questions to see what is already \
+1. Look at the existing questions to see what is already \
 in the pool and identify underrepresented topics, difficulties, or styles.
 2. Come up with a candidate user question targeting an underrepresented angle. \
-Optionally, explore the knowledge graph or draft and execute a SPARQL query to \
-soft-verify the question or to pick plausible entities and properties. You may \
-also submit purely speculative questions, including ones that may turn out to \
-be unanswerable.
-3. Submit the question via submit_question.
+If needed, explore the knowledge graph using the provided functions to gain \
+inspiration.
+3. Submit the question once you are happy with it.
 4. Repeat steps 1-3 until you have submitted around {config.questions_per_round} \
-questions for this round, then call stop."""
+questions for this round, then stop."""
 
 
 def output(state: QuestionGenerationState) -> dict:
-    counts = [f'"{kg}": {len(qs)} questions' for kg, qs in state.questions.items()]
-    if not counts:
-        formatted = "Question generation completed. No questions in the pool."
-    else:
-        formatted = "Question generation completed. Current pool:\n" + format_list(
-            counts
-        )
+    kg_questions = []
+    for kg, questions in state.questions.items():
+        kg_questions.append(f'Questions for "{kg}":\n' + format_list(questions))
+
+    formatted = "\n\n".join(kg_questions)
 
     return {
         "type": "output",
@@ -100,14 +92,17 @@ class QuestionGenerationTask(GraspTask):
             "State must be provided for question generation task"
         )
 
-        if fn_name == "submit_question":
+        if fn_name == "stop":
+            return "Stopping question generation."
+
+        elif fn_name == "submit_question":
             return submit_question(
                 self.state.questions,
                 fn_args["kg"],
                 fn_args["question"],
             )
 
-        if fn_name == "show_questions":
+        elif fn_name == "show_questions":
             return show_questions(
                 self.state.questions,
                 fn_args["kg"],
@@ -115,7 +110,7 @@ class QuestionGenerationTask(GraspTask):
                 self.config.list_k,
             )
 
-        if fn_name == "find_frequent":
+        elif fn_name == "find_frequent":
             return find_frequent(
                 self.managers,
                 fn_args["kg"],
@@ -140,11 +135,7 @@ class QuestionGenerationTask(GraspTask):
             "Input for question generation must be a QuestionGenerationState"
         )
         self.state = input
-        return (
-            "Generate plausible user questions for the available knowledge graphs. "
-            "Add to the question pool one question at a time and call stop when "
-            "you have covered enough variety for this round."
-        )
+        return "Generate plausible user questions for the available knowledge graphs."
 
     def output(self, messages: list[Message]) -> dict:
         return output(self.state)

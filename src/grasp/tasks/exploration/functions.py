@@ -177,8 +177,10 @@ def call_function(
             max_notes,
             max_note_length,
         )
+
     elif fn_name == "delete_note":
         return delete_note(name, notes_to_use, fn_args["num"])
+
     elif fn_name == "update_note":
         return update_note(
             name,
@@ -187,7 +189,9 @@ def call_function(
             fn_args["note"],
             max_note_length,
         )
+
     elif fn_name == "show_notes":
         return show_notes(notes_to_use)
+
     else:
         raise ValueError(f"Unknown function {fn_name}")
