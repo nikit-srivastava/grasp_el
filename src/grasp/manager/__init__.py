@@ -802,8 +802,8 @@ class KgManager:
 DEFAULT_DESCRIPTIONS = {
     "entities": "Entities indexed by their labels and synonyms",
     "properties": "Properties indexed by their labels, synonyms, and IRIs",
-    "literals": "Free-floating literal values (e.g. enumerable string values "
-    "used as objects, not entity-associated labels)",
+    "literals": "Free-floating literal values (e.g., enumerable string values "
+    "used as objects which are not entity-associated labels)",
 }
 
 

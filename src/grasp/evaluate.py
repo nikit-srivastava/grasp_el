@@ -336,11 +336,11 @@ def evaluate_with_judge(
         assert judge_config.knowledge_graph is not None, (
             "Reformatting requires judge_config.knowledge_graph to be set"
         )
-        logger.info(
-            f"Loading KG manager for '{judge_config.knowledge_graph.kg}' "
-            "to reformat SPARQL candidates"
-        )
         manager = load_kg_manager(judge_config.knowledge_graph)
+        logger.info(
+            f'Loaded KG manager for "{judge_config.knowledge_graph.kg}" '
+            f"to reformat SPARQL candidates using the endpoint at {manager.endpoint}"
+        )
 
     def get_candidates(outputs: list[dict]) -> list[str]:
         candidates = []
