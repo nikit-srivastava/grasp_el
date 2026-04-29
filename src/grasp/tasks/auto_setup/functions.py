@@ -188,7 +188,7 @@ def validate_solution_modifier(parse: dict, enc: bytes, target: str):
         raise ValueError(f"Solution modifier must be '{target}', but got '{sol_mod}'")
 
 
-INDEX_SPARQL_SELECT = "SELECT ?id ?value ?tags"
+INDEX_SPARQL_SELECT = "SELECT DISTINCT ?id ?value ?tags"
 INDEX_SPARQL_SOL_MOD = "ORDER BY DESC(?score) ?id DESC(?tags)"
 
 
@@ -200,7 +200,7 @@ def validate_index_sparql(parser: LR1Parser, sparql: str):
     validate_solution_modifier(parse, enc, INDEX_SPARQL_SOL_MOD)
 
 
-INFO_SPARQL_SELECT = "SELECT ?id ?value ?type"
+INFO_SPARQL_SELECT = "SELECT DISTINCT ?id ?value ?type"
 INFO_SPARQL_SOL_MOD = "ORDER BY ?id ?type ?value"
 
 
