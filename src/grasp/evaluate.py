@@ -262,11 +262,19 @@ You are given a question and two or more SPARQL query candidates \
 that attempt to answer the question. Your task is to determine \
 which of the candidate queries is the best answer to the question, \
 or whether they are all equally good. The query logic and correctness \
-should be your primary criteria for judgement, while other factors such as \
-additional information or human readability should be secondary. \
+should be your primary criteria for judgement. \
 Note that some candidates might indicate that no SPARQL query \
 has been generated/found, which should not automatically be considered worse \
 than a generated SPARQL query that is incorrect or irrelevant to the question.
+
+Importantly, you should not prefer one answer over the other purely because of \
+secondary factors such as formatting, verbosity, additional information, \
+or human readability (unless it is requested in the question). If the \
+core content and logic are equally good, you should also judge them as being \
+equally good. Similarly, questions can be ambiguous, and different candidates \
+might have different interpretations of them that are equally valid. If no \
+single interpretation is clearly better than the others, you should also judge \
+them as being equally good.
 
 Think before you finalize your answer with the provided judge function.""",
         ),

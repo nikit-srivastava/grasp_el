@@ -787,9 +787,25 @@ def show_ranking_view(ranking_data: dict) -> None:
         st.warning("No ranking files found.")
         return
 
+    # Regex filter for ranking comparisons
+    ranking_regex = st.sidebar.text_input(
+        "Filter rankings by regex pattern", key="ranking_regex"
+    )
+    filtered_ranking_options = ranking_options
+    if ranking_regex:
+        try:
+            regex = re.compile(ranking_regex)
+            filtered = [r for r in ranking_options if regex.search(r)]
+            if filtered:
+                filtered_ranking_options = filtered
+            else:
+                st.sidebar.warning(f"No rankings match the pattern '{ranking_regex}'")
+        except re.error as e:
+            st.sidebar.error(f"Invalid regex pattern: {e}")
+
     # Select ranking comparison to view
     selected_ranking = st.sidebar.selectbox(
-        "Select Ranking Comparison", ranking_options, index=0
+        "Select Ranking Comparison", filtered_ranking_options, index=0
     )
 
     display_name = display_name_from_file(selected_ranking)
