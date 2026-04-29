@@ -598,9 +598,9 @@ def parse_args() -> argparse.Namespace:
             "all",
             "info",
             "indices",
-            "entity-index",
-            "property-index",
-            "literal-index",
+            "entities",
+            "properties",
+            "literals",
         ],
         default="all",
         help="Which phase(s) to run (default: all)",
@@ -916,11 +916,11 @@ def auto_setup_grasp(args: argparse.Namespace) -> None:
     all_phases = [
         ("info", {"phase": "info", "notes": args.info_notes}),
         (
-            "entity-index",
+            "entities",
             {"phase": "index", "name": "entities", "notes": args.entity_index_notes},
         ),
         (
-            "property-index",
+            "properties",
             {
                 "phase": "index",
                 "name": "properties",
@@ -928,7 +928,7 @@ def auto_setup_grasp(args: argparse.Namespace) -> None:
             },
         ),
         (
-            "literal-index",
+            "literals",
             {
                 "phase": "index",
                 "name": "literals",
@@ -937,12 +937,12 @@ def auto_setup_grasp(args: argparse.Namespace) -> None:
         ),
     ]
     selected = {
-        "all": {"info", "entity-index", "property-index", "literal-index"},
+        "all": {"info", "entities", "properties", "literals"},
         "info": {"info"},
-        "indices": {"entity-index", "property-index", "literal-index"},
-        "entity-index": {"entity-index"},
-        "property-index": {"property-index"},
-        "literal-index": {"literal-index"},
+        "indices": {"entities", "properties", "literals"},
+        "entities": {"entities"},
+        "properties": {"properties"},
+        "literals": {"literals"},
     }[args.phases]
     phases = [payload for tag, payload in all_phases if tag in selected]
 
