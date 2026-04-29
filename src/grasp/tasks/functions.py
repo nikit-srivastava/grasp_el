@@ -125,18 +125,16 @@ LIMIT {page * k}"""
     result.data = result.data[start:end]
 
     # update known
-    if "entities" in manager.indices:
-        update_known_from_rows(
-            known,
-            result.rows(),
-            manager.get_normalizer("entities"),
-        )
-    if "properties" in manager.indices:
-        update_known_from_rows(
-            known,
-            result.rows(),
-            manager.get_normalizer("properties"),
-        )
+    update_known_from_rows(
+        known,
+        result.rows(),
+        manager.get_normalizer("entities"),
+    )
+    update_known_from_rows(
+        known,
+        result.rows(),
+        manager.get_normalizer("properties"),
+    )
 
     target_var = position[0]
     items = []
