@@ -1005,10 +1005,14 @@ def auto_setup_grasp(args: argparse.Namespace) -> None:
         name = phase_input["name"]
         for typ in ["index", "info"]:
             sparql = output["sparql"].get(typ)
+            path = os.path.join(kg_dir, name, f"{typ}.sparql")
+
             if sparql is None:
+                if os.path.lexists(path):
+                    os.unlink(path)
+                    logger.info(f"Unlinked {name} {typ} SPARQL (query set to None; previous timestamped queries are retained)")
                 continue
 
-            path = os.path.join(kg_dir, name, f"{typ}.sparql")
             stamped = dump_latest(path, sparql, text=True)
             logger.info(f"Saved {name} {typ} SPARQL to {stamped} (latest: {path})")
 
