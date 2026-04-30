@@ -55,7 +55,10 @@ class InfoState(BaseModel):
 
 
 def update_known_from_sparql(sparql: str, known: set[str], manager: KgManager) -> None:
+    disable_info_retrieval = manager.disable_info_retrieval
     try:
+        # temporarily disable info retrieval
+        manager.set_info_retrieval(enable=False)
         _, items = extract_sparql_items(sparql, manager)
         for obj_type in [ObjType.ENTITY, ObjType.PROPERTY]:
             normalizer = manager.get_normalizer(obj_type.index_name)
@@ -66,6 +69,8 @@ def update_known_from_sparql(sparql: str, known: set[str], manager: KgManager) -
             )
     except Exception:
         pass
+    finally:
+        manager.set_info_retrieval(disable_info_retrieval)
 
 
 def load_index_state(manager: KgManager, name: str, known: set[str]) -> IndexState:

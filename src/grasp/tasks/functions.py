@@ -157,7 +157,7 @@ LIMIT {page * k}"""
             if label is not None:
                 formatted = f"{label} ({formatted})"
 
-        items.append(f"{formatted} - {freq} occurrences")
+        items.append(f"{formatted} - {int(freq):,} occurrences")
 
     return f"Most frequent {plural} (page {page}):\n" + format_enumerate(
         items, start=(page - 1) * k
