@@ -6,8 +6,10 @@
 # python scripts/annotate_entities.py data/qald10_questions.jsonl data/qald10_annotated.jsonl --sparql-endpoint http://enexa1.cs.uni-paderborn.de:9080/sparql --openai-base-url http://lola.cs.uni-paderborn.de:9292/v1 --openai-api-key nokeyrequired --model qwen-3.6-27b --progress
 """Annotate questions in a JSONL file with Wikidata entity and property links.
 
-Each input record must have an "id" field and a text field (default: "question").
-Annotations are added under an "annotations" key in the output.
+Each input record should have a text field (default: "question"). If an "id" field
+is present it is used for resume tracking; otherwise a stable ID is derived from
+the "sources" field (or the record index as fallback). All input fields (e.g.
+"sources") are copied through to the output.
 
 Annotation format:
   [{"span": "<text in question>", "identifier": "wd:Q183", "label": "Germany", "type": "entity"}, ...]
@@ -46,6 +48,22 @@ Output format (JSON array, nothing else):
 ]
 
 If nothing relevant is found, output: []"""
+
+
+def _stable_id(rec: dict, index: int) -> str:
+    """Derive a stable, unique ID for a record that may lack an 'id' field."""
+    if "id" in rec:
+        return rec["id"]
+    sources = rec.get("sources")
+    if sources and isinstance(sources, list) and len(sources) > 0:
+        first = sources[0]
+        if isinstance(first, dict):
+            dataset = first.get("dataset", "")
+            qid = first.get("qid", "")
+            lang = first.get("lang", "")
+            if dataset and qid:
+                return f"{dataset}:{qid}:{lang}"
+    return f"__idx_{index}__"
 
 
 def _parse_json_annotations(content: str) -> list[dict] | None:
@@ -245,9 +263,9 @@ def main() -> None:
     with open(args.input) as f:
         records = [json.loads(line) for line in f if line.strip()]
 
+    # Assign stable IDs for resume tracking (don't mutate original 'id' if present)
     for i, rec in enumerate(records):
-        if "id" not in rec:
-            rec["id"] = str(i)
+        rec["_stable_id"] = _stable_id(rec, i)
 
     # --- Resume: skip already-done IDs ---
     done: set[str] = set()
@@ -255,9 +273,9 @@ def main() -> None:
         with open(args.output) as f:
             for line in f:
                 if line.strip():
-                    done.add(json.loads(line).get("id", ""))
+                    done.add(json.loads(line).get("_stable_id", ""))
 
-    pending = [r for r in records if r["id"] not in done]
+    pending = [r for r in records if r["_stable_id"] not in done]
     if not pending:
         print("All records already annotated. Use --overwrite to redo.", file=sys.stderr)
         return
