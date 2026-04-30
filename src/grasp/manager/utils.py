@@ -44,6 +44,15 @@ def load_data(index_dir: str) -> Data:
     return data
 
 
+def get_index_type_from_data(data: Data) -> str:
+    # heuristic to determine index type from data size,
+    # used when index type is auto
+    if len(data) > 1_000_000:
+        return "fuzzy"
+    else:
+        return "embedding"
+
+
 def try_load_search_index(
     index_dir: str,
     index_type: str,
@@ -57,6 +66,16 @@ def try_load_search_index(
         if logger is not None:
             logger.warning(f"Failed to load data from {index_dir}: {e}")
         return None
+
+    # resolve auto index type depending on the size of the data
+    if index_type == "auto":
+        index_type = get_index_type_from_data(data)
+
+        if logger is not None:
+            logger.debug(
+                f"Resolved auto index type to {index_type} based on "
+                f"data size ({len(data):,} items)"
+            )
 
     index_dir = os.path.join(index_dir, index_type)
     load_kwargs = {"data": data, "index_dir": index_dir}

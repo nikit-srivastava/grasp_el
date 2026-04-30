@@ -7,7 +7,7 @@ from search_rdf.model import SentenceTransformerModel
 from universal_ml_utils.logging import get_logger
 from universal_ml_utils.ops import flatten
 
-from grasp.manager.utils import load_data
+from grasp.manager.utils import get_index_type_from_data, load_data
 from grasp.utils import get_index_dir
 
 
@@ -24,24 +24,22 @@ def build_index(
 ) -> None:
     logger = get_logger("GRASP INDEX", log_level)
 
-    if index_type == "auto":
-        if index_name in "entities":
-            index_type = "fuzzy"
-        elif index_name in ("properties", "literals"):
-            index_type = "embedding"
-        else:
-            raise ValueError(f'Auto index type not supported for index "{index_name}"')
-
     data_dir = os.path.join(get_index_dir(kg), index_name)
     index_dir = os.path.join(data_dir, index_type)
+
+    data = load_data(data_dir)
+    if index_type == "auto":
+        assert index_name == "literals", (
+            "Auto index type selection is only supported for literals index"
+        )
+        index_type = get_index_type_from_data(data)
+        logger.info(f'Auto-selected index type {index_type} for index "{index_name}"')
 
     if os.path.exists(index_dir) and not overwrite:
         logger.info(
             f"Index of type {index_type} already exists at {index_dir}. Skipping build."
         )
         return
-
-    data = load_data(data_dir)
 
     os.makedirs(index_dir, exist_ok=True)
     start = time.perf_counter()

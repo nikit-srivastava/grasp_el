@@ -15,7 +15,7 @@ class KgConfig(BaseModel):
     kg: str
     entities_type: Literal["fuzzy", "embedding", "keyword"] = "fuzzy"
     properties_type: Literal["fuzzy", "embedding", "keyword"] = "embedding"
-    literals_type: Literal["fuzzy", "embedding", "keyword"] = "embedding"
+    literals_type: Literal["auto", "fuzzy", "embedding", "keyword"] = "auto"
     notes_file: str | None = None
     example_index: str | None = None
 

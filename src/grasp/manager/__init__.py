@@ -868,19 +868,14 @@ def load_kg_manager(cfg: KgConfig, skip_indices: bool = False) -> KgManager:
     if prop_index is not None:
         indices["properties"] = prop_index
 
-    # Auto-load the literals index whenever it was built (i.e. the data
-    # dir exists); only attempt if explicitly opted in or auto-detected
-    # so we don't log spurious warnings for KGs that never had literals.
-    literals_dir = os.path.join(get_index_dir(cfg.kg), "literals")
-    if cfg.literals_type is not None or os.path.exists(literals_dir):
-        lit_index = try_load_index(
-            cfg.kg,
-            "literals",
-            cfg.literals_type,
-            logger,
-        )
-        if lit_index is not None:
-            indices["literals"] = lit_index
+    lit_index = try_load_index(
+        cfg.kg,
+        "literals",
+        cfg.literals_type,
+        logger,
+    )
+    if lit_index is not None:
+        indices["literals"] = lit_index
 
     others = load_other_indices(cfg.kg, cfg.indices)
     for name, index in others.items():
