@@ -87,7 +87,7 @@ if [[ "${SLURM_ACTIVE:-false}" == "true" ]]; then
         -B "$CUR_SCRIPT_DIR/llama_server_models.ini":/app/models.ini \
         --env LLAMA_CACHE=/models \
         --env LLAMA_SET_ROWS=1 \
-        llama-cpp-server-cuda12-b8763.sif \
+        llama-cpp-server-cuda12-b8994.sif \
         "$LLAMA_CONTAINER_NAME" \
         --models-preset /app/models.ini --host 0.0.0.0 --port $HOST_PORT --models-max 2 --parallel 1 --ctx-size "$LLAMA_ARG_CTX_SIZE" --verbose --sleep-idle-seconds 600
 

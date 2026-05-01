@@ -2,7 +2,7 @@
 """Split a JSONL file into N roughly equal chunks.
 
 Usage:
-  python scripts/split_jsonl.py data/questions.jsonl data/chunks/ 100
+  python scripts/split_jsonl.py data/sample_questions.jsonl data/chunks/ 100
   # → produces data/chunks/chunk_0000.jsonl … chunk_0099.jsonl
 
 With --shuffle, records are randomly permuted before splitting.

@@ -36,10 +36,10 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # Defaults
 # --------------------------------------------------------------------------- #
 PARTITION="gpu"
-TIME_LIMIT="24:00:00"
-GRES="gpu:1"
+TIME_LIMIT="01:00:00"
+GRES="gpu:h100:1"
 CPUS_PER_TASK=8
-MEM_PER_CPU="4G"
+MEM_PER_CPU="10G"
 MODEL="qwen-3.6-27b"
 SPARQL_ENDPOINT=""
 INPUT_GLOB=""
