@@ -8,6 +8,8 @@ set -eu
 # To restart a specific port: bash setup/llama_server_control.sh restart 9393
 
 CUR_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resolve the project root (parent of llama-server/)
+PROJECT_ROOT="$(cd "${CUR_SCRIPT_DIR}/.." && pwd)"
 
 # Default host port (maps to container's 8080)
 DEFAULT_PORT=9292
@@ -36,9 +38,26 @@ if [[ "$ACTION" == "restart" ]]; then
   ACTION="start"
 fi
 
-# Define where we keep logs for each port
+# --- Validate LLAMA_CACHE ---
+if [[ -z "${LLAMA_CACHE:-}" ]]; then
+  echo "ERROR: LLAMA_CACHE environment variable is not set." >&2
+  echo "  It must point to a directory containing downloaded model files." >&2
+  exit 1
+fi
+if [[ ! -d "$LLAMA_CACHE" ]]; then
+  echo "ERROR: LLAMA_CACHE directory does not exist: ${LLAMA_CACHE}" >&2
+  exit 1
+fi
+# Ensure it is an absolute path for bind mounts
+case "$LLAMA_CACHE" in
+  /*) ;; # already absolute
+  *)  LLAMA_CACHE="$(cd "$LLAMA_CACHE" && pwd)" ;;
+esac
+
+# Define where we keep logs for each port — always use ABSOLUTE paths
+# so apptainer / SLURM can resolve them regardless of CWD.
 JOB_ID=${SLURM_JOB_ID:-}
-LOG_DIR="data_dir/llama-server-logs/${JOB_ID}"
+LOG_DIR="${PROJECT_ROOT}/data_dir/llama-server-logs/${JOB_ID}"
 mkdir -p "$LOG_DIR"
 
 MACHINE_NAME="${RUN_SYS_NAME:-$(hostname)}"
@@ -72,7 +91,7 @@ echo "Starting $LLAMA_CONTAINER_NAME on host port $HOST_PORT ..."
 rm -f "$SENTINEL_FILE"
 
 if [[ "${SLURM_ACTIVE:-false}" == "true" ]]; then
-  export APPTAINER_CONFIGDIR="data_dir/apptainer-config-dir/${JOB_ID}"
+  export APPTAINER_CONFIGDIR="${PROJECT_ROOT}/data_dir/apptainer-config-dir/${JOB_ID}"
   mkdir -p "$APPTAINER_CONFIGDIR"
   # NOTE: Build the apptainer SIF from OCI beforehand: "apptainer build llama-cpp-server.sif docker://ghcr.io/ggml-org/llama.cpp:server-cuda13-b8763"
   # Use `apptainer instance run` so the container's runscript (entrypoint) is

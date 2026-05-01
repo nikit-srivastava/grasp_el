@@ -48,6 +48,7 @@ OUTPUT_DIR=""
 DRY_RUN=false
 ARRAY=false
 VENV=""
+LLAMA_CACHE="${LLAMA_CACHE:-}"
 EXTRA_ANNOTATE_ARGS=""
 
 # --------------------------------------------------------------------------- #
@@ -66,6 +67,7 @@ while [[ $# -gt 0 ]]; do
     --input-manifest)   INPUT_MANIFEST="$2";  shift 2 ;;
     --output-dir)       OUTPUT_DIR="$2";      shift 2 ;;
     --venv)             VENV="$2";            shift 2 ;;
+    --llama-cache)      LLAMA_CACHE="$2";     shift 2 ;;
     --extra-args)       EXTRA_ANNOTATE_ARGS="$2"; shift 2 ;;
     --dry-run)          DRY_RUN=true;         shift   ;;
     --array)            ARRAY=true;           shift   ;;
@@ -104,6 +106,17 @@ fi
 
 if [[ ! -d "$VENV" ]]; then
   echo "ERROR: Virtual environment not found at ${VENV}. Run scripts/setup_annotate_env.sh first." >&2
+  exit 1
+fi
+
+if [[ -z "$LLAMA_CACHE" ]]; then
+  echo "ERROR: LLAMA_CACHE is not set." >&2
+  echo "  Export it or pass --llama-cache to point to your models directory." >&2
+  exit 1
+fi
+
+if [[ ! -d "$LLAMA_CACHE" ]]; then
+  echo "ERROR: LLAMA_CACHE directory does not exist: ${LLAMA_CACHE}" >&2
   exit 1
 fi
 
@@ -163,6 +176,9 @@ set -euo pipefail
 
 export SLURM_ACTIVE=true
 export PROJECT_ROOT="${PROJECT_ROOT}"
+export LLAMA_CACHE="${LLAMA_CACHE}"
+
+cd "${PROJECT_ROOT}"
 
 # Activate virtual environment
 source "${VENV}/bin/activate"
@@ -217,6 +233,9 @@ set -euo pipefail
 
 export SLURM_ACTIVE=true
 export PROJECT_ROOT="${PROJECT_ROOT}"
+export LLAMA_CACHE="${LLAMA_CACHE}"
+
+cd "${PROJECT_ROOT}"
 
 source "${VENV}/bin/activate"
 
