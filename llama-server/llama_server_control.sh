@@ -71,6 +71,7 @@ SENTINEL_FILE="${LOG_DIR}/llama-server-${HOST_PORT}-${MACHINE_NAME}.stop"
 if [[ "$ACTION" == "stop" ]]; then
   echo "Stopping $LLAMA_CONTAINER_NAME ..."
   if [[ "${SLURM_ACTIVE:-false}" == "true" ]]; then
+    export APPTAINER_CONFIGDIR="${PROJECT_ROOT}/data_dir/apptainer-config-dir/${JOB_ID}"
     touch "$SENTINEL_FILE"   # Signal to the retry loop: don't restart
     apptainer instance stop "$LLAMA_CONTAINER_NAME" 2>/dev/null || true
     echo "Apptainer instance stopped."
@@ -106,7 +107,7 @@ if [[ "${SLURM_ACTIVE:-false}" == "true" ]]; then
         -B "$CUR_SCRIPT_DIR/llama_server_models.ini":/app/models.ini \
         --env LLAMA_CACHE=/models \
         --env LLAMA_SET_ROWS=1 \
-        llama-cpp-server-cuda12-b8562.sif \
+        llama-cpp-server-cuda12-b8994.sif \
         "$LLAMA_CONTAINER_NAME" \
         --models-preset /app/models.ini --host 0.0.0.0 --port $HOST_PORT --models-max 2 --parallel 1 --ctx-size "$LLAMA_ARG_CTX_SIZE" --verbose --sleep-idle-seconds 600
 
@@ -145,7 +146,7 @@ else
       --env LLAMA_SET_ROWS=1 \
       --name "$LLAMA_CONTAINER_NAME" \
       ghcr.io/ggml-org/llama.cpp:server-cuda12-b8562 \
-      --models-preset /app/models.ini --host 0.0.0.0 --port 8080 --models-max 2 --parallel 1 --ctx-size "$LLAMA_ARG_CTX_SIZE" --sleep-idle-seconds 600
+      --models-preset /app/models.ini --host 0.0.0.0 --port 8080 --models-max 1 --parallel 1 --ctx-size "$LLAMA_ARG_CTX_SIZE" --sleep-idle-seconds 600
   }
 
   (

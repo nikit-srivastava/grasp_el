@@ -41,11 +41,11 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # Defaults
 # --------------------------------------------------------------------------- #
 PARTITION="gpu"
-TIME_LIMIT="01:00:00"
+TIME_LIMIT="05:00:00"
 GRES="gpu:h100:1"
 CPUS_PER_TASK=8
 MEM_PER_CPU="15G"
-MODEL="gpt-oss-120b"
+MODEL="qwen-3.6-27b"
 SPARQL_ENDPOINT=""
 INPUT_GLOB=""
 INPUT_MANIFEST=""

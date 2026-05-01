@@ -135,5 +135,5 @@ dmypy.json
 /data
 
 *.out
-data_dir/
+*data_dir/
 *.sif
