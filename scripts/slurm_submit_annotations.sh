@@ -29,6 +29,11 @@
 
 set -euo pipefail
 
+module load lang/Python/3.13.1-GCCcore-14.2.0
+module load system/CUDA/13.0.0
+module load tools/Apptainer/1.3.5-GCCcore-13.3.0 # otus only # make sure the cache directories are set right
+
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
@@ -39,8 +44,8 @@ PARTITION="gpu"
 TIME_LIMIT="01:00:00"
 GRES="gpu:h100:1"
 CPUS_PER_TASK=8
-MEM_PER_CPU="10G"
-MODEL="qwen-3.6-27b"
+MEM_PER_CPU="15G"
+MODEL="gpt-oss-120b"
 SPARQL_ENDPOINT=""
 INPUT_GLOB=""
 INPUT_MANIFEST=""
