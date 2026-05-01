@@ -53,7 +53,11 @@ def find_free_port(preferred: int | None = None) -> int:
 
 
 def wait_for_server(base_url: str, timeout: int = 300, interval: float = 3.0) -> None:
-    """Block until the OpenAI-compatible /v1/models endpoint responds."""
+    """Block until the OpenAI-compatible /v1/models endpoint responds.
+
+    *base_url* is the server root (e.g. http://localhost:9292), so the probe
+    hits /v1/models.
+    """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
@@ -170,7 +174,9 @@ def main() -> None:
                 )
                 port = find_free_port(preferred=port + 1)
 
-    base_url = f"http://localhost:{port}/v1"
+    # NOTE: do NOT append "/v1" here — the OpenAI Python client prepends
+    # "/v1" itself, so the base URL must point at the server root.
+    base_url = f"http://localhost:{port}"
     annotate_script = os.path.join(_SCRIPT_DIR, "annotate_entities.py")
 
     server_proc: subprocess.Popen | None = None

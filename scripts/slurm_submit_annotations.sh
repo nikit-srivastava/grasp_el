@@ -49,6 +49,8 @@ DRY_RUN=false
 ARRAY=false
 VENV=""
 LLAMA_CACHE="${LLAMA_CACHE:-}"
+PORT_BASE=10000
+CONCURRENCY=0
 EXTRA_ANNOTATE_ARGS=""
 
 # --------------------------------------------------------------------------- #
@@ -68,6 +70,8 @@ while [[ $# -gt 0 ]]; do
     --output-dir)       OUTPUT_DIR="$2";      shift 2 ;;
     --venv)             VENV="$2";            shift 2 ;;
     --llama-cache)      LLAMA_CACHE="$2";     shift 2 ;;
+    --port-base)        PORT_BASE="$2";       shift 2 ;;
+    --concurrency)      CONCURRENCY="$2";     shift 2 ;;
     --extra-args)       EXTRA_ANNOTATE_ARGS="$2"; shift 2 ;;
     --dry-run)          DRY_RUN=true;         shift   ;;
     --array)            ARRAY=true;           shift   ;;
@@ -160,6 +164,7 @@ generate_job_script() {
   local input_file="$1"
   local output_file="$2"
   local job_script="$3"
+  local port="$4"
 
   cat > "$job_script" <<SLURM_EOF
 #!/usr/bin/env bash
@@ -188,6 +193,7 @@ python scripts/run_annotation_pipeline.py \
     "${input_file}" "${output_file}" \
     --sparql-endpoint "${SPARQL_ENDPOINT}" \
     --model "${MODEL}" \
+    --port "${port}" \
     --slurm-active \
     --progress \
     ${EXTRA_ANNOTATE_ARGS}
@@ -250,6 +256,7 @@ python scripts/run_annotation_pipeline.py \
     "\$INPUT_FILE" "\$OUTPUT_FILE" \
     --sparql-endpoint "${SPARQL_ENDPOINT}" \
     --model "${MODEL}" \
+    --port $((PORT_BASE + \${SLURM_ARRAY_TASK_ID})) \
     --slurm-active \
     --progress \
     ${EXTRA_ANNOTATE_ARGS}
@@ -281,30 +288,72 @@ else
   JOB_SCRIPTS_DIR="${PROJECT_ROOT}/data_dir/slurm-job-scripts"
   mkdir -p "$JOB_SCRIPTS_DIR"
 
+  # Generate all job scripts first (with unique ports)
   job_count=0
   for input_file in "${INPUT_FILES[@]}"; do
     output_file="$(resolve_output "$input_file")"
     job_name="$(basename "$input_file" .jsonl)"
     job_script="${JOB_SCRIPTS_DIR}/annotate_${job_name}.sh"
+    port=$((PORT_BASE + job_count))
 
-    generate_job_script "$input_file" "$output_file" "$job_script"
+    generate_job_script "$input_file" "$output_file" "$job_script" "$port"
+    job_count=$((job_count + 1))
+  done
 
-    if [[ "$DRY_RUN" == true ]]; then
-      echo "[slurm-submit] [DRY-RUN] Would submit: ${job_script}"
+  # Submit with concurrency limiting
+  if [[ "$DRY_RUN" == true ]]; then
+    job_count=0
+    for input_file in "${INPUT_FILES[@]}"; do
+      output_file="$(resolve_output "$input_file")"
+      echo "[slurm-submit] [DRY-RUN] Would submit: port=$((PORT_BASE + job_count))"
       echo "  Input:  ${input_file}"
       echo "  Output: ${output_file}"
       echo ""
-    else
-      echo "[slurm-submit] Submitting: ${job_name} (${job_count} …)"
-      JOB_ID=$(sbatch "$job_script" | awk '{print $4}')
-      echo "  → Job ID: ${JOB_ID}"
       job_count=$((job_count + 1))
-    fi
-  done
-
-  if [[ "$DRY_RUN" == true ]]; then
+    done
     echo "[slurm-submit] [DRY-RUN] Total jobs that would be submitted: ${#INPUT_FILES[@]}"
   else
+    # If CONCURRENCY > 0, submit in batches; otherwise submit all at once
+    if [[ "$CONCURRENCY" -gt 0 ]]; then
+      batch=0
+      job_count=0
+      while [[ $job_count -lt ${#INPUT_FILES[@]} ]]; do
+        batch_start=$job_count
+        batch_end=$((batch_start + CONCURRENCY))
+        [[ $batch_end -gt ${#INPUT_FILES[@]} ]] && batch_end=${#INPUT_FILES[@]}
+
+        echo "[slurm-submit] Submitting batch $batch (jobs $batch_start..$((batch_end - 1))) …"
+        for ((i = batch_start; i < batch_end; i++)); do
+          input_file="${INPUT_FILES[$i]}"
+          job_name="$(basename "$input_file" .jsonl)"
+          job_script="${JOB_SCRIPTS_DIR}/annotate_${job_name}.sh"
+          JOB_ID=$(sbatch "$job_script" | awk '{print $4}')
+          echo "  → ${job_name}: Job ID ${JOB_ID} (port $((PORT_BASE + i)))"
+        done
+
+        # Wait for the batch to finish before submitting the next one
+        echo "[slurm-submit] Waiting for batch $batch to complete …"
+        sleep 30
+        while true; do
+          running=$(squeue -u "$(whoami)" --start | grep -c "annotate-" 2>/dev/null || true)
+          [[ $running -le 0 ]] && break
+          sleep 10
+        done
+        echo "[slurm-submit] Batch $batch done."
+
+        job_count=$batch_end
+        batch=$((batch + 1))
+      done
+    else
+      job_count=0
+      for input_file in "${INPUT_FILES[@]}"; do
+        job_name="$(basename "$input_file" .jsonl)"
+        job_script="${JOB_SCRIPTS_DIR}/annotate_${job_name}.sh"
+        JOB_ID=$(sbatch "$job_script" | awk '{print $4}')
+        echo "[slurm-submit] Submitted ${job_name}: Job ID ${JOB_ID} (port $((PORT_BASE + job_count)))"
+        job_count=$((job_count + 1))
+      done
+    fi
     echo "[slurm-submit] Submitted ${job_count} job(s)."
     echo "[slurm-submit] Track with: squeue -u \$(whoami)"
   fi
