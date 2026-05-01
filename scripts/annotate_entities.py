@@ -267,13 +267,17 @@ def main() -> None:
     for i, rec in enumerate(records):
         rec["_stable_id"] = _stable_id(rec, i)
 
-    # --- Resume: skip already-done IDs ---
+    # --- Resume: skip already-done IDs (only those without errors) ---
     done: set[str] = set()
     if os.path.exists(args.output):
-        with open(args.output) as f:
-            for line in f:
-                if line.strip():
-                    done.add(json.loads(line).get("_stable_id", ""))
+        with open(args.output) as read_f:
+            lines = [json.loads(line) for line in read_f if line.strip()]
+        # Rewrite output keeping only successful records, so errored ones are retried
+        with open(args.output, "w") as write_f:
+            for rec in lines:
+                if "error" not in rec:
+                    done.add(rec.get("_stable_id", ""))
+                    write_f.write(json.dumps(rec) + "\n")
 
     pending = [r for r in records if r["_stable_id"] not in done]
     if not pending:
